@@ -70,8 +70,8 @@ class _MirrorScreenState extends State<MirrorScreen> {
 
   Future<void> _initTts() async {
     await _flutterTts.setLanguage("ko-KR");
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.setPitch(1.1);
+    await _flutterTts.setSpeechRate(0.4);
+    await _flutterTts.setPitch(1.0);
   }
 
   Future<void> _analyzeFaceAndGreet() async {
