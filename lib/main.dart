@@ -94,7 +94,8 @@ class _MirrorScreenState extends State<MirrorScreen> {
         _addAiMessage(response.text!);
       }
     } catch (e) {
-      _addAiMessage("연결 상태가 좋지 않네요. API 키를 확인해 주세요!");
+  _addAiMessage("에러 발생: $e");
+}
     } finally {
       setState(() => isThinking = false);
     }
