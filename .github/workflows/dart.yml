@@ -15,6 +15,10 @@ jobs:
           channel: 'stable'
       - run: flutter pub get
       - run: flutter create . --platforms=android --project-name na_on --org com.example
+      - name: Fix Kotlin version
+        run: |
+          find . -name "build.gradle" -exec sed -i "s/kotlin_version = '.*'/kotlin_version = '1.9.0'/g" {} +
+          find . -name "build.gradle" -exec sed -i "s/kotlin-gradle-plugin:.*\"/kotlin-gradle-plugin:1.9.0\"/g" {} +
       - run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
