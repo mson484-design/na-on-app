@@ -219,7 +219,7 @@ class _MirrorScreenState extends State<MirrorScreen> {
                   ),
                 ),
               ],
-            ),
+            ), 
           ),
         ],
       ),
