@@ -7,20 +7,24 @@ List<CameraDescription> cameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  cameras = await availableCameras();
-  runApp(const MagicMirrorApp());
+  try {
+    cameras = await availableCameras();
+  } catch (e) {
+    debugPrint("카메라 초기화 에러: $e");
+  }
+  runApp(const MyApp());
 }
 
-class MagicMirrorApp extends StatelessWidget {
-  const MagicMirrorApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      title: '나온 - 다정한 거울',
       theme: ThemeData(
-        primaryColor: Colors.pinkAccent,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
+        primarySwatch: Colors.pink,
       ),
       home: const MirrorScreen(),
     );
@@ -38,12 +42,11 @@ class _MirrorScreenState extends State<MirrorScreen> {
   final TextEditingController _textController = TextEditingController();
   List<Map<String, String>> messages = [];
   bool isThinking = false;
-  
+
   CameraController? _cameraController;
   final FlutterTts _flutterTts = FlutterTts();
-  
-  // 🔥 기사님의 구글 AI API KEY가 안전하게 입력되어 있습니다 🔥
-  static const apiKey = 'AQ.Ab8RN6KxepidiZrGquuKq3Kh4U3Clo3hl32ad4rWAk0w1kzTzw';
+
+  static const apiKey = 'AQ.Ab8RN6KxepidizRGquuKq3Kh4U3C1o3hl32ad4rWAK0w1kzTzw';
   late final GenerativeModel _aiModel;
 
   @override
@@ -54,173 +57,160 @@ class _MirrorScreenState extends State<MirrorScreen> {
     _initTts();
   }
 
-  Future<void> _initCamera() async {
-    if (cameras.isEmpty) return;
-    int cameraIndex = cameras.length > 1 ? 1 : 0;
-    _cameraController = CameraController(cameras[cameraIndex], ResolutionPreset.medium);
-    
-    await _cameraController!.initialize();
-    if (mounted) setState(() {});
-    
-    // 앱 시작 2초 후 얼굴 분석 시작
-    Future.delayed(const Duration(seconds: 2), () {
-      _analyzeFaceAndGreet();
-    });
-  }
-
   Future<void> _initTts() async {
     await _flutterTts.setLanguage("ko-KR");
     await _flutterTts.setSpeechRate(0.4);
     await _flutterTts.setPitch(1.0);
   }
 
+  Future<void> _initCamera() async {
+    if (cameras.isEmpty) return;
+    int cameraIndex = cameras.length > 1 ? 1 : 0;
+    _cameraController = CameraController(cameras[cameraIndex], ResolutionPreset.medium);
+
+    await _cameraController!.initialize();
+    if (mounted) setState(() {});
+
+    Future.delayed(const Duration(seconds: 2), () {
+      _analyzeFaceAndGreet();
+    });
+  }
+
   Future<void> _analyzeFaceAndGreet() async {
     if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-    
+
     setState(() => isThinking = true);
-    
+
     try {
       final image = await _cameraController!.takePicture();
       final imageBytes = await image.readAsBytes();
-      
-      final prompt = TextPart("당신은 다정하고 우아한 뷰티/스타일 조언자 '나온'입니다. 첨부된 사진 속 인물의 스타일, 안색, 분위기를 확인하고 다정한 칭찬과 함께 가벼운 뷰티 또는 코디 제안을 2~3문장으로 자연스럽게 건네주세요.");
+
+      final prompt = TextPart("당신은 다정한 and 우아한 뷰티/스타일 조언자 '나온'입니다. 첨부된 사진 속 인물의 스타일, 안색, 분위기를 확인하고 첫인사를 다정하게 건네주세요.");
       final imagePart = DataPart('image/jpeg', imageBytes);
-      
+
       final response = await _aiModel.generateContent([
         Content.multi([prompt, imagePart])
       ]);
-      
+
       if (response.text != null) {
         _addAiMessage(response.text!);
       }
     } catch (e) {
-  _addAiMessage("에러 발생: $e");
-}
+      _addAiMessage("에러 발생: $e");
     } finally {
       setState(() => isThinking = false);
     }
   }
 
   Future<void> _addUserMessage(String text) async {
-    if (text.isEmpty) return;
-    
+    if (text.isEmpty) {
+      return;
+    }
+
     setState(() {
       messages.add({"sender": "user", "text": text});
       isThinking = true;
     });
     _textController.clear();
-    
+
     try {
       final prompt = "사용자가 '$text'라고 말했습니다. 다정한 거울 '나온'의 입장에서 짧게 대답해주세요.";
       final response = await _aiModel.generateContent([Content.text(prompt)]);
-      
+
       if (response.text != null) {
         _addAiMessage(response.text!);
       }
     } catch (e) {
-      _addAiMessage("제가 지금은 답을 드리기 어려워요.");
+      _addAiMessage("에러 발생: $e");
     } finally {
       setState(() => isThinking = false);
     }
   }
 
-  void _addAiMessage(String text) {
+  Future<void> _addAiMessage(String text) async {
     setState(() {
       messages.add({"sender": "ai", "text": text});
     });
-    _flutterTts.speak(text);
+    await _flutterTts.speak(text);
   }
 
   @override
   void dispose() {
     _cameraController?.dispose();
-    _flutterTts.stop();
     _textController.dispose();
+    _flutterTts.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
+      appBar: AppBar(
+        title: const Text('나온 - 다정한 거울'),
+        centerTitle: true,
+      ),
+      body: Column(
         children: [
-          SizedBox(
-            width: double.infinity,
-            height: double.infinity,
-            child: _cameraController != null && _cameraController!.value.isInitialized
-                ? CameraPreview(_cameraController!)
-                : const Center(child: CircularProgressIndicator()),
+          Expanded(
+            flex: 5,
+            child: _cameraController == null || !_cameraController!.value.isInitialized
+                ? const Center(child: CircularProgressIndicator())
+                : CameraPreview(_cameraController!),
           ),
-          SafeArea(
+          Expanded(
+            flex: 5,
             child: Column(
               children: [
-                if (isThinking)
-                  Container(
-                    padding: const EdgeInsets.all(8.0),
-                    color: Colors.black45,
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.pinkAccent, strokeWidth: 2)),
-                        SizedBox(width: 8),
-                        Text("나온이 거울 속 모습을 살피고 있어요...", style: TextStyle(color: Colors.white, fontSize: 12)),
-                      ],
-                    ),
-                  ),
                 Expanded(
                   child: ListView.builder(
-                    padding: const EdgeInsets.all(16.0),
                     itemCount: messages.length,
                     itemBuilder: (context, index) {
                       final msg = messages[index];
                       final isUser = msg["sender"] == "user";
-                      return Align(
+                      return Container(
                         alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                         child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 8.0),
-                          padding: const EdgeInsets.all(14.0),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: isUser ? Colors.pinkAccent.withOpacity(0.8) : Colors.white.withOpacity(0.85),
-                            borderRadius: BorderRadius.circular(20),
+                            color: isUser ? Colors.pink[100] : Colors.grey[200],
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: Text(
-                            msg["text"]!,
-                            style: TextStyle(fontSize: 16, color: isUser ? Colors.white : Colors.black87, height: 1.4),
-                          ),
+                          child: Text(msg["text"] ?? ''),
                         ),
                       );
                     },
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
-                  color: Colors.black54,
+                if (isThinking)
+                  const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Text("나온이가 생각 중이에요...", style: TextStyle(color: Colors.grey)),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
                   child: Row(
                     children: [
                       Expanded(
                         child: TextField(
                           controller: _textController,
-                          style: const TextStyle(color: Colors.white),
-                          decoration: InputDecoration(
-                            hintText: "거울에게 말해보세요...",
-                            hintStyle: const TextStyle(color: Colors.white54),
-                            filled: true,
-                            fillColor: Colors.white24,
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                          decoration: const InputDecoration(
+                            hintText: '나온이에게 말을 걸어보세요...',
+                            border: OutlineInputBorder(),
                           ),
-                          onSubmitted: _addUserMessage,
+                          onSubmitted: (value) => _addUserMessage(value),
                         ),
                       ),
+                      const SizedBox(width: 8),
                       IconButton(
-                        icon: const Icon(Icons.send, color: Colors.pinkAccent),
+                        icon: const Icon(Icons.send, color: Colors.pink),
                         onPressed: () => _addUserMessage(_textController.text),
                       ),
                     ],
                   ),
                 ),
               ],
-            ), 
+            ),
           ),
         ],
       ),
