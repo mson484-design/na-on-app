@@ -46,13 +46,16 @@ class _MirrorScreenState extends State<MirrorScreen> {
   CameraController? _cameraController;
   final FlutterTts _flutterTts = FlutterTts();
 
-  static const apiKey = 'AQ.Ab8RN6KxepidizRGquuKq3Kh4U3C1o3hl32ad4rWAK0w1kzTzw';
+static const apiKey =
+    String.fromEnvironment('GEMINI_API_KEY');
   late final GenerativeModel _aiModel;
 
   @override
   void initState() {
     super.initState();
-    _aiModel = GenerativeModel(model: 'gemini-1.5-flash', apiKey: apiKey);
+  _aiModel = GenerativeModel(
+ model: 'gemini-3.8-flash',
+  apiKey: apiKey,
     _initCamera();
     _initTts();
   }
