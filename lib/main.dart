@@ -63,7 +63,7 @@ void initState() {
   _initCamera();
   _initTts();
 }
-  }
+  
 
   Future<void> _initTts() async {
     await _flutterTts.setLanguage("ko-KR");
