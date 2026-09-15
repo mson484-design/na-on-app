@@ -26,7 +26,7 @@ jobs:
           if [ -f "$MANIFEST_PATH" ]; then
             sed -i '/<application/i \    <uses-permission android:name="android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />' "$MANIFEST_PATH"
           fi
-      - run: flutter build apk --release
+      -  run: flutter build apk --release --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
       - uses: actions/upload-artifact@v4
         with:
           name: app-release
