@@ -11,7 +11,7 @@ dependencies:
     sdk: flutter
   camera: ^0.11.0+2
   flutter_tts: ^4.0.2
-  google_generative_ai: ^0.4.7
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
