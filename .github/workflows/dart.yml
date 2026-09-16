@@ -25,13 +25,15 @@ jobs:
       - name: Create Android project
         run: flutter create . --platforms=android --project-name na_on --org com.example
 
-      - name: Configure Kotlin
+      - name: Configure Android
         run: |
           sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.10"/' android/settings.gradle
           sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.10'/" android/settings.gradle
           sed -i "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '1.9.10'/" android/build.gradle
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
           sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle
+
+          sed -i '/<manifest xmlns:android="http:\/\/schemas.android.com\/apk\/res\/android">/a\    <uses-permission android:name="android.permission.INTERNET"/>' android/app/src/main/AndroidManifest.xml
 
       - name: Build APK
         env:
