@@ -24,6 +24,14 @@ jobs:
       - name: Create Android project
         run: flutter create . --platforms=android --project-name na_on --org com.example
 
+      - name: Configure Kotlin
+        run: |
+          sed -i "s/id \"org.jetbrains.kotlin.android\" version \"[^\"]*\"/id \"org.jetbrains.kotlin.android\" version \"1.9.10\"/" android/settings.gradle
+          sed -i "s/id 'org.jetbrains.kotlin.android' version '[^']*'/id 'org.jetbrains.kotlin.android' version '1.9.10'/" android/settings.gradle
+          sed -i "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '1.9.10'/" android/build.gradle
+          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 21/g' android/app/build.gradle
+
       - name: Build APK
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
