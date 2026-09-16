@@ -7,11 +7,13 @@ List<CameraDescription> cameras = [];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
   try {
     cameras = await availableCameras();
   } catch (e) {
     debugPrint("카메라 초기화 에러: $e");
   }
+
   runApp(const MyApp());
 }
 
@@ -40,30 +42,32 @@ class MirrorScreen extends StatefulWidget {
 
 class _MirrorScreenState extends State<MirrorScreen> {
   final TextEditingController _textController = TextEditingController();
+
   List<Map<String, String>> messages = [];
+
   bool isThinking = false;
 
- CameraController? _cameraController;
-final FlutterTts _flutterTts = FlutterTts();
+  CameraController? _cameraController;
 
-static const apiKey =
-    String.fromEnvironment('GEMINI_API_KEY');
+  final FlutterTts _flutterTts = FlutterTts();
 
-late final GenerativeModel _aiModel;
+  static const apiKey =
+      String.fromEnvironment('GEMINI_API_KEY');
 
-@override
-void initState() {
-  super.initState();
+  late final GenerativeModel _aiModel;
 
-  _aiModel = GenerativeModel(
-    model: 'gemini-3.8-flash',
-    apiKey: apiKey,
-  );
+  @override
+  void initState() {
+    super.initState();
 
-  _initCamera();
-  _initTts();
-}
-  
+    _aiModel = GenerativeModel(
+      model: 'gemini-3.8-flash',
+      apiKey: apiKey,
+    );
+
+    _initCamera();
+    _initTts();
+  }
 
   Future<void> _initTts() async {
     await _flutterTts.setLanguage("ko-KR");
@@ -73,72 +77,128 @@ void initState() {
 
   Future<void> _initCamera() async {
     if (cameras.isEmpty) return;
+
     int cameraIndex = cameras.length > 1 ? 1 : 0;
-    _cameraController = CameraController(cameras[cameraIndex], ResolutionPreset.medium);
 
-    await _cameraController!.initialize();
-    if (mounted) setState(() {});
-
-    Future.delayed(const Duration(seconds: 2), () {
-      _analyzeFaceAndGreet();
-    });
-  }
-
-  Future<void> _analyzeFaceAndGreet() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-
-    setState(() => isThinking = true);
+    _cameraController = CameraController(
+      cameras[cameraIndex],
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
 
     try {
-      final image = await _cameraController!.takePicture();
-      final imageBytes = await image.readAsBytes();
+      await _cameraController!.initialize();
 
-      final prompt = TextPart("당신은 다정한 and 우아한 뷰티/스타일 조언자 '나온'입니다. 첨부된 사진 속 인물의 스타일, 안색, 분위기를 확인하고 첫인사를 다정하게 건네주세요.");
-      final imagePart = DataPart('image/jpeg', imageBytes);
-
-      final response = await _aiModel.generateContent([
-        Content.multi([prompt, imagePart])
-      ]);
-
-      if (response.text != null) {
-        _addAiMessage(response.text!);
+      if (mounted) {
+        setState(() {});
       }
+
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          _analyzeFaceAndGreet();
+        }
+      });
     } catch (e) {
-      _addAiMessage("에러 발생: $e");
-    } finally {
-      setState(() => isThinking = false);
+      debugPrint("카메라 초기화 오류: $e");
     }
   }
 
-  Future<void> _addUserMessage(String text) async {
-    if (text.isEmpty) {
+  Future<void> _analyzeFaceAndGreet() async {
+    if (_cameraController == null ||
+        !_cameraController!.value.isInitialized) {
       return;
     }
 
     setState(() {
-      messages.add({"sender": "user", "text": text});
       isThinking = true;
     });
+
+    try {
+      final image = await _cameraController!.takePicture();
+
+      final imageBytes = await image.readAsBytes();
+
+      final prompt = TextPart(
+        "당신은 다정한 and 우아한 뷰티/스타일 조언자 "
+        "'나온'입니다. 첨부된 사진 속 인물의 스타일, 안색, "
+        "분위기를 확인하고 첫인사를 다정하게 건네주세요.",
+      );
+
+      final imagePart = DataPart(
+        'image/jpeg',
+        imageBytes,
+      );
+
+      final response = await _aiModel.generateContent([
+        Content.multi([
+          prompt,
+          imagePart,
+        ])
+      ]);
+
+      if (response.text != null) {
+        await _addAiMessage(response.text!);
+      }
+    } catch (e) {
+      await _addAiMessage("에러 발생: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          isThinking = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _addUserMessage(String text) async {
+    if (text.trim().isEmpty) {
+      return;
+    }
+
+    setState(() {
+      messages.add({
+        "sender": "user",
+        "text": text,
+      });
+
+      isThinking = true;
+    });
+
     _textController.clear();
 
     try {
-      final prompt = "사용자가 '$text'라고 말했습니다. 다정한 거울 '나온'의 입장에서 짧게 대답해주세요.";
-      final response = await _aiModel.generateContent([Content.text(prompt)]);
+      final prompt =
+          "사용자가 '$text'라고 말했습니다. "
+          "다정한 거울 '나온'의 입장에서 짧게 대답해주세요.";
+
+      final response = await _aiModel.generateContent([
+        Content.text(prompt),
+      ]);
 
       if (response.text != null) {
-        _addAiMessage(response.text!);
+        await _addAiMessage(response.text!);
       }
     } catch (e) {
-      _addAiMessage("에러 발생: $e");
+      await _addAiMessage("에러 발생: $e");
     } finally {
-      setState(() => isThinking = false);
+      if (mounted) {
+        setState(() {
+          isThinking = false;
+        });
+      }
     }
   }
 
   Future<void> _addAiMessage(String text) async {
+    if (!mounted) return;
+
     setState(() {
-      messages.add({"sender": "ai", "text": text});
+      messages.add({
+        "sender": "ai",
+        "text": text,
+      });
     });
+
     await _flutterTts.speak(text);
   }
 
@@ -147,6 +207,7 @@ void initState() {
     _cameraController?.dispose();
     _textController.dispose();
     _flutterTts.stop();
+
     super.dispose();
   }
 
@@ -154,70 +215,191 @@ void initState() {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('나온 - 다정한 거울'),
+        title: const Text(
+          '나온 - 다정한 거울',
+        ),
         centerTitle: true,
       ),
+
       body: Column(
         children: [
+
+          // ==========================================
+          // 상단 80% : 카메라
+          // ==========================================
           Expanded(
-            flex: 5,
-            child: _cameraController == null || !_cameraController!.value.isInitialized
-                ? const Center(child: CircularProgressIndicator())
-                : CameraPreview(_cameraController!),
+            flex: 8,
+            child: Container(
+              width: double.infinity,
+              color: Colors.black,
+              child: _cameraController == null ||
+                      !_cameraController!.value.isInitialized
+                  ? const Center(
+                      child: CircularProgressIndicator(),
+                    )
+                  : CameraPreview(
+                      _cameraController!,
+                    ),
+            ),
           ),
+
+          // ==========================================
+          // 하단 20% : 나온 AI 대화
+          // ==========================================
           Expanded(
-            flex: 5,
-            child: Column(
-              children: [
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      final isUser = msg["sender"] == "user";
-                      return Container(
-                        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isUser ? Colors.pink[100] : Colors.grey[200],
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(msg["text"] ?? ''),
-                        ),
-                      );
-                    },
+            flex: 2,
+            child: Container(
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.pink.shade200,
+                    width: 2,
                   ),
                 ),
-                if (isThinking)
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Text("나온이가 생각 중이에요...", style: TextStyle(color: Colors.grey)),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _textController,
-                          decoration: const InputDecoration(
-                            hintText: '나온이에게 말을 걸어보세요...',
-                            border: OutlineInputBorder(),
+              ),
+              child: Column(
+                children: [
+
+                  // AI 메시지 영역
+                  Expanded(
+                    child: messages.isEmpty
+                        ? const Center(
+                            child: Text(
+                              '나온에게 말을 걸어보세요.',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final msg = messages[index];
+
+                              final isUser =
+                                  msg["sender"] == "user";
+
+                              return Container(
+                                alignment: isUser
+                                    ? Alignment.centerRight
+                                    : Alignment.centerLeft,
+                                padding:
+                                    const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
+                                child: Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context)
+                                                .size
+                                                .width *
+                                            0.85,
+                                  ),
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isUser
+                                        ? Colors.pink[100]
+                                        : Colors.grey[200],
+                                    borderRadius:
+                                        BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    msg["text"] ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                          onSubmitted: (value) => _addUserMessage(value),
+                  ),
+
+                  // 생각 중 표시
+                  if (isThinking)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(
+                        vertical: 2,
+                      ),
+                      child: Text(
+                        "나온이가 생각 중이에요...",
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 11,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.send, color: Colors.pink),
-                        onPressed: () => _addUserMessage(_textController.text),
-                      ),
-                    ],
+                    ),
+
+                  // 입력창
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      8,
+                      3,
+                      8,
+                      6,
+                    ),
+                    child: Row(
+                      children: [
+
+                        Expanded(
+                          child: SizedBox(
+                            height: 42,
+                            child: TextField(
+                              controller: _textController,
+                              decoration: InputDecoration(
+                                hintText:
+                                    '나온이에게 말을 걸어보세요...',
+                                hintStyle: const TextStyle(
+                                  fontSize: 12,
+                                ),
+                                contentPadding:
+                                    const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 8,
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(20),
+                                ),
+                              ),
+                              onSubmitted: (value) {
+                                _addUserMessage(value);
+                              },
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(width: 6),
+
+                        IconButton(
+                          icon: const Icon(
+                            Icons.send,
+                            color: Colors.pink,
+                          ),
+                          onPressed: () {
+                            _addUserMessage(
+                              _textController.text,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
