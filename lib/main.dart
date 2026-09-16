@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
+
 import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 
@@ -12,7 +13,7 @@ Future<void> main() async {
   try {
     cameras = await availableCameras();
   } catch (e) {
-    debugPrint("카메라 초기화 에러: $e");
+    debugPrint("카메라 초기화 오류: $e");
   }
 
   runApp(const MyApp());
@@ -56,7 +57,6 @@ class _MirrorScreenState extends State<MirrorScreen> {
   static const apiKey =
       String.fromEnvironment('OPENAI_API_KEY');
 
-  // 이미지 분석이 가능한 OpenAI 모델
   static const model = 'gpt-5.6-luna';
 
   @override
@@ -74,13 +74,22 @@ class _MirrorScreenState extends State<MirrorScreen> {
   }
 
   Future<void> _initCamera() async {
-    if (cameras.isEmpty) return;
+    if (cameras.isEmpty) {
+      _showError("카메라를 찾을 수 없습니다.");
+      return;
+    }
 
-    // 전면 카메라 우선
-    int cameraIndex = cameras.length > 1 ? 1 : 0;
+    CameraDescription selectedCamera = cameras.first;
+
+    for (final camera in cameras) {
+      if (camera.lensDirection == CameraLensDirection.front) {
+        selectedCamera = camera;
+        break;
+      }
+    }
 
     _cameraController = CameraController(
-      cameras[cameraIndex],
+      selectedCamera,
       ResolutionPreset.medium,
       enableAudio: false,
     );
@@ -92,7 +101,6 @@ class _MirrorScreenState extends State<MirrorScreen> {
         setState(() {});
       }
 
-      // 카메라가 켜진 뒤 2초 후 첫 분석
       Future.delayed(const Duration(seconds: 2), () {
         if (mounted) {
           _analyzeFaceAndGreet();
@@ -100,16 +108,26 @@ class _MirrorScreenState extends State<MirrorScreen> {
       });
     } catch (e) {
       debugPrint("카메라 초기화 오류: $e");
+
+      _showError("카메라 오류: $e");
     }
   }
 
   // ==========================================================
-  // 사진 + AI 이미지 분석
+  // 사진 AI 분석
   // ==========================================================
 
   Future<void> _analyzeFaceAndGreet() async {
     if (_cameraController == null ||
         !_cameraController!.value.isInitialized) {
+      return;
+    }
+
+    if (apiKey.trim().isEmpty) {
+      _showError(
+        "OpenAI API 키가 앱에 전달되지 않았습니다.\n"
+        "GitHub Secret과 APK 빌드를 확인해주세요.",
+      );
       return;
     }
 
@@ -125,42 +143,54 @@ class _MirrorScreenState extends State<MirrorScreen> {
       final base64Image = base64Encode(imageBytes);
 
       const prompt = '''
-당신은 다정하고 우아한 뷰티/스타일 조언자 '나온'입니다.
+당신은 다정하고 우아한 뷰티·스타일 조언자 '나온'입니다.
 
 사진 속 인물을 존중하는 방식으로 관찰하고,
-보이는 범위에서 스타일, 표정, 분위기, 전체적인 인상과
-색감에 대한 가벼운 뷰티·스타일 조언을 해주세요.
+보이는 범위에서 표정, 분위기, 스타일, 색감 등에 대해
+가볍고 따뜻한 뷰티·스타일 조언을 해주세요.
 
 의학적인 진단이나 나이 추정은 하지 마세요.
 
-첫 만남처럼 따뜻하고 자연스럽게 한국어로 짧게 인사해주세요.
+처음 만난 것처럼 자연스럽고 짧게 한국어로 인사해주세요.
 ''';
 
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/responses'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          'model': model,
-          'input': [
-            {
-              'role': 'user',
-              'content': [
+      final response = await http
+          .post(
+            Uri.parse(
+              'https://api.openai.com/v1/responses',
+            ),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode({
+              'model': model,
+              'input': [
                 {
-                  'type': 'input_text',
-                  'text': prompt,
-                },
-                {
-                  'type': 'input_image',
-                  'image_url':
-                      'data:image/jpeg;base64,$base64Image',
-                },
+                  'role': 'user',
+                  'content': [
+                    {
+                      'type': 'input_text',
+                      'text': prompt,
+                    },
+                    {
+                      'type': 'input_image',
+                      'image_url':
+                          'data:image/jpeg;base64,$base64Image',
+                    },
+                  ],
+                }
               ],
-            }
-          ],
-        }),
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+
+      debugPrint(
+        "OpenAI 상태코드: ${response.statusCode}",
+      );
+
+      debugPrint(
+        "OpenAI 응답: ${response.body}",
       );
 
       if (response.statusCode >= 200 &&
@@ -177,19 +207,20 @@ class _MirrorScreenState extends State<MirrorScreen> {
           );
         }
       } else {
-        debugPrint(
-          "OpenAI 오류 ${response.statusCode}: ${response.body}",
-        );
+        final errorMessage =
+            _extractErrorMessage(response.body);
 
-        await _addAiMessage(
-          "지금은 AI 연결이 잠시 어려워요.",
+        _showError(
+          "OpenAI 오류\n"
+          "상태코드: ${response.statusCode}\n"
+          "$errorMessage",
         );
       }
     } catch (e) {
       debugPrint("이미지 분석 오류: $e");
 
-      await _addAiMessage(
-        "사진을 확인하는 중 잠시 문제가 생겼어요.",
+      _showError(
+        "연결 오류\n$e",
       );
     } finally {
       if (mounted) {
@@ -201,13 +232,40 @@ class _MirrorScreenState extends State<MirrorScreen> {
   }
 
   // ==========================================================
-  // OpenAI Responses API 결과에서 텍스트 추출
+  // OpenAI 오류 내용 추출
   // ==========================================================
 
-  String _extractOutputText(Map<String, dynamic> data) {
+  String _extractErrorMessage(String body) {
+    try {
+      final data = jsonDecode(body);
+
+      if (data is Map<String, dynamic>) {
+        final error = data['error'];
+
+        if (error is Map<String, dynamic>) {
+          final message = error['message'];
+
+          if (message != null) {
+            return message.toString();
+          }
+        }
+      }
+    } catch (_) {}
+
+    return body;
+  }
+
+  // ==========================================================
+  // OpenAI 응답 텍스트 추출
+  // ==========================================================
+
+  String _extractOutputText(
+      Map<String, dynamic> data) {
     try {
       if (data['output_text'] != null) {
-        return data['output_text'].toString().trim();
+        return data['output_text']
+            .toString()
+            .trim();
       }
 
       final output = data['output'];
@@ -248,6 +306,13 @@ class _MirrorScreenState extends State<MirrorScreen> {
       return;
     }
 
+    if (apiKey.trim().isEmpty) {
+      _showError(
+        "OpenAI API 키가 앱에 없습니다.",
+      );
+      return;
+    }
+
     setState(() {
       messages.add({
         "sender": "user",
@@ -260,40 +325,48 @@ class _MirrorScreenState extends State<MirrorScreen> {
     _textController.clear();
 
     try {
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/responses'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode({
-          'model': model,
-          'input':
-              "사용자가 '$text'라고 말했습니다. "
-              "다정한 거울 '나온'의 입장에서 "
-              "짧고 따뜻하게 한국어로 대답해주세요.",
-        }),
-      );
+      final response = await http
+          .post(
+            Uri.parse(
+              'https://api.openai.com/v1/responses',
+            ),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode({
+              'model': model,
+              'input':
+                  "사용자가 '$text'라고 말했습니다. "
+                  "다정한 거울 '나온'의 입장에서 "
+                  "짧고 따뜻하게 한국어로 대답해주세요.",
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode >= 200 &&
           response.statusCode < 300) {
         final data = jsonDecode(response.body);
 
-        final answer = _extractOutputText(data);
+        final answer =
+            _extractOutputText(data);
 
         if (answer.isNotEmpty) {
           await _addAiMessage(answer);
         }
       } else {
-        await _addAiMessage(
-          "지금은 대화를 잠시 쉬고 있어요.",
+        final errorMessage =
+            _extractErrorMessage(response.body);
+
+        _showError(
+          "OpenAI 오류\n"
+          "상태코드: ${response.statusCode}\n"
+          "$errorMessage",
         );
       }
     } catch (e) {
-      debugPrint("대화 오류: $e");
-
-      await _addAiMessage(
-        "잠시 후 다시 이야기해 주세요.",
+      _showError(
+        "대화 연결 오류\n$e",
       );
     } finally {
       if (mounted) {
@@ -321,6 +394,21 @@ class _MirrorScreenState extends State<MirrorScreen> {
     await _flutterTts.speak(text);
   }
 
+  // ==========================================================
+  // 오류 표시
+  // ==========================================================
+
+  void _showError(String text) {
+    if (!mounted) return;
+
+    setState(() {
+      messages.add({
+        "sender": "ai",
+        "text": text,
+      });
+    });
+  }
+
   @override
   void dispose() {
     _cameraController?.dispose();
@@ -346,29 +434,24 @@ class _MirrorScreenState extends State<MirrorScreen> {
       body: Column(
         children: [
 
-          // ================================================
-          // 상단 80% : 카메라
-          // ================================================
-
           Expanded(
             flex: 8,
             child: Container(
               width: double.infinity,
               color: Colors.black,
               child: _cameraController == null ||
-                      !_cameraController!.value.isInitialized
+                      !_cameraController!
+                          .value
+                          .isInitialized
                   ? const Center(
-                      child: CircularProgressIndicator(),
+                      child:
+                          CircularProgressIndicator(),
                     )
                   : CameraPreview(
                       _cameraController!,
                     ),
             ),
           ),
-
-          // ================================================
-          // 하단 20% : 나온 AI
-          // ================================================
 
           Expanded(
             flex: 2,
@@ -399,11 +482,13 @@ class _MirrorScreenState extends State<MirrorScreen> {
                           )
                         : ListView.builder(
                             padding:
-                                const EdgeInsets.symmetric(
+                                const EdgeInsets
+                                    .symmetric(
                               horizontal: 10,
                               vertical: 4,
                             ),
-                            itemCount: messages.length,
+                            itemCount:
+                                messages.length,
                             itemBuilder:
                                 (context, index) {
                               final msg =
@@ -415,8 +500,10 @@ class _MirrorScreenState extends State<MirrorScreen> {
 
                               return Container(
                                 alignment: isUser
-                                    ? Alignment.centerRight
-                                    : Alignment.centerLeft,
+                                    ? Alignment
+                                        .centerRight
+                                    : Alignment
+                                        .centerLeft,
                                 padding:
                                     const EdgeInsets
                                         .symmetric(
@@ -443,11 +530,15 @@ class _MirrorScreenState extends State<MirrorScreen> {
                                   decoration:
                                       BoxDecoration(
                                     color: isUser
-                                        ? Colors.pink[100]
-                                        : Colors.grey[200],
+                                        ? Colors
+                                            .pink[100]
+                                        : Colors
+                                            .grey[200],
                                     borderRadius:
                                         BorderRadius
-                                            .circular(12),
+                                            .circular(
+                                      12,
+                                    ),
                                   ),
                                   child: Text(
                                     msg["text"] ?? '',
@@ -514,13 +605,16 @@ class _MirrorScreenState extends State<MirrorScreen> {
                                     OutlineInputBorder(
                                   borderRadius:
                                       BorderRadius
-                                          .circular(20),
+                                          .circular(
+                                    20,
+                                  ),
                                 ),
                               ),
                               onSubmitted:
                                   (value) {
                                 _addUserMessage(
-                                    value);
+                                  value,
+                                );
                               },
                             ),
                           ),
