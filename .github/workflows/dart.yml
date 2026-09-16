@@ -9,30 +9,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
-          channel: 'stable'
+          channel: stable
 
-      - name: Get Flutter packages
+      - name: Get packages
         run: flutter pub get
 
       - name: Create Android project
         run: flutter create . --platforms=android --project-name na_on --org com.example
 
-      - name: Set Android Kotlin and Min SDK
-        run: |
-          sed -i "s/ext.kotlin_version = '.*'/ext.kotlin_version = '1.9.10'/g" android/build.gradle
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 21/g' android/app/build.gradle
-
-      - name: Build APK with Gemini API Key
+      - name: Build APK
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: flutter build apk --release --dart-define=GEMINI_API_KEY="$GEMINI_API_KEY"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: flutter build apk --release --dart-define=OPENAI_API_KEY="$OPENAI_API_KEY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
