@@ -46,6 +46,7 @@ class NaonHomePage extends StatefulWidget {
 
 class _NaonHomePageState extends State<NaonHomePage> {
   CameraController? _cameraController;
+
   final FlutterTts _tts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
 
@@ -64,14 +65,14 @@ class _NaonHomePageState extends State<NaonHomePage> {
   @override
   void initState() {
     super.initState();
+
     _initializeCamera();
     _initSpeech();
     _initTts();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _addNaonMessage(
-        '안녕하세요. 저는 나온이에요. '
-        '지금 보이는 모습과 말씀을 바탕으로 편하게 도와드릴게요.',
+        '안녕하세요. 저는 나온이에요. 지금 보이는 모습과 말씀을 바탕으로 편하게 도와드릴게요.',
         speak: false,
       );
     });
@@ -166,7 +167,9 @@ class _NaonHomePageState extends State<NaonHomePage> {
 
   Future<void> _toggleListening() async {
     if (!speechReady) {
-      _showError('음성인식을 사용할 수 없습니다.\n휴대폰의 마이크 권한을 확인해주세요.');
+      _showError(
+        '음성인식을 사용할 수 없습니다.\n휴대폰의 마이크 권한을 확인해주세요.',
+      );
       return;
     }
 
@@ -255,6 +258,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
         'type': 'user',
         'text': question,
       });
+
       _textController.clear();
       isThinking = true;
     });
@@ -283,10 +287,12 @@ class _NaonHomePageState extends State<NaonHomePage> {
           'type': 'naon',
           'text': answer,
         });
+
         isThinking = false;
       });
 
       _scrollToBottom();
+
       await _speak(answer);
     } catch (e) {
       debugPrint('AI 요청 오류: $e');
@@ -300,8 +306,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
       });
 
       _showError(
-        'AI와 연결하는 중 문제가 생겼어요.\n'
-        '잠시 후 다시 말씀해주세요.',
+        'AI와 연결하는 중 문제가 생겼어요.\n잠시 후 다시 말씀해주세요.',
       );
     }
   }
@@ -320,8 +325,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
 
     if (image != null) {
       final bytes = await image.readAsBytes();
-      final base64Image = base64Encode(bytes);
-      imageData = base64Image;
+      imageData = base64Encode(bytes);
     }
 
     String lengthInstruction;
@@ -331,8 +335,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
           '답변은 핵심만 1~2문장으로 아주 짧게 해주세요.';
     } else if (answerLength == '길게') {
       lengthInstruction =
-          '답변은 충분히 자세하게 설명해주세요. '
-          '실제로 도움이 되는 방법과 예시도 포함해주세요.';
+          '답변은 충분히 자세하게 설명해주세요. 실제로 도움이 되는 방법과 예시도 포함해주세요.';
     } else {
       lengthInstruction =
           '답변은 이해하기 편한 3~5문장 정도로 해주세요.';
@@ -341,17 +344,29 @@ class _NaonHomePageState extends State<NaonHomePage> {
     final systemPrompt = '''
 당신은 '나온 - 다정한 나온'이라는 개인 AI 도우미입니다.
 
-사용자에게 친절하고 편안하게 말하세요.
-아나운서처럼 또렷하고 자연스러운 말투를 사용하세요.
+사용자에게 친절하고 자연스럽게 말하세요.
 
-사용자가 질문하면 질문의 의도를 먼저 이해하고
-실생활에서 도움이 되는 조언을 주세요.
+상황에 따라 말투의 분위기를 조절하세요.
+
+기분이 좋거나 재미있는 상황:
+밝고 활기찬 음악 DJ처럼 표현하세요.
+짧고 생동감 있는 문장을 사용하세요.
+
+중요한 정보를 전달하는 상황:
+방송 아나운서처럼 또렷하고 안정적으로 설명하세요.
+
+걱정하거나 고민하는 상황:
+속도를 서두르지 않는 차분하고 편안한 분위기로 말하세요.
+
+단, 과장된 감정 표현은 피하고 자연스럽게 대화하세요.
 
 사진이 제공되면 사진에서 실제로 관찰되는 모습만 활용하세요.
+
 표정이나 분위기는 조심스럽게 표현하세요.
 예:
 "조금 편안해 보이네요."
 "차분한 분위기가 느껴져요."
+"오늘은 밝은 느낌이 조금 더 느껴져요."
 
 사진만으로 나이, 질병, 건강상태, 성격 등을 단정하지 마세요.
 의학적 진단도 하지 마세요.
@@ -359,7 +374,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
 답변 길이:
 $lengthInstruction
 
-사용자가 편하게 다시 질문할 수 있도록 대화를 이어가세요.
+사용자가 다시 질문하기 쉽도록 대화를 자연스럽게 이어가세요.
 ''';
 
     final List<Map<String, dynamic>> content = [
@@ -398,9 +413,12 @@ $lengthInstruction
 
     debugPrint('OpenAI 상태코드: ${response.statusCode}');
 
-    if (response.statusCode < 200 || response.statusCode >= 300) {
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300) {
       debugPrint('OpenAI 오류: ${response.body}');
-      throw Exception('OpenAI HTTP ${response.statusCode}');
+      throw Exception(
+        'OpenAI HTTP ${response.statusCode}',
+      );
     }
 
     final data = jsonDecode(response.body);
@@ -418,7 +436,8 @@ $lengthInstruction
     if (data is Map<String, dynamic>) {
       final direct = data['output_text'];
 
-      if (direct is String && direct.trim().isNotEmpty) {
+      if (direct is String &&
+          direct.trim().isNotEmpty) {
         return direct;
       }
 
@@ -459,10 +478,82 @@ $lengthInstruction
   Future<void> _speak(String text) async {
     try {
       await _tts.stop();
+
+      final lower = text.toLowerCase();
+
+      double rate = 0.38;
+      double pitch = 0.95;
+
+      if (_isCheerful(text, lower)) {
+        rate = 0.45;
+        pitch = 1.08;
+      } else if (_isCalm(text, lower)) {
+        rate = 0.32;
+        pitch = 0.90;
+      } else {
+        rate = 0.38;
+        pitch = 0.97;
+      }
+
+      await _tts.setSpeechRate(rate);
+      await _tts.setPitch(pitch);
+      await _tts.setVolume(1.0);
+
       await _tts.speak(text);
     } catch (e) {
       debugPrint('음성 출력 오류: $e');
     }
+  }
+
+  bool _isCheerful(String text, String lower) {
+    const cheerfulWords = [
+      '축하',
+      '좋아요',
+      '멋져요',
+      '잘했어요',
+      '신나요',
+      '즐거',
+      '재미',
+      '반가워',
+      '최고',
+      '응원',
+      '기분',
+      '웃',
+      '행복',
+      '환영',
+    ];
+
+    for (final word in cheerfulWords) {
+      if (text.contains(word) || lower.contains(word)) {
+        return true;
+      }
+    }
+
+    return text.contains('!');
+  }
+
+  bool _isCalm(String text, String lower) {
+    const calmWords = [
+      '걱정',
+      '고민',
+      '힘들',
+      '속상',
+      '불안',
+      '천천히',
+      '괜찮',
+      '편안',
+      '주의',
+      '조심',
+      '안전',
+    ];
+
+    for (final word in calmWords) {
+      if (text.contains(word) || lower.contains(word)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   void _addNaonMessage(
@@ -618,8 +709,9 @@ $lengthInstruction
                 final isUser = message['type'] == 'user';
 
                 return Align(
-                  alignment:
-                      isUser ? Alignment.centerRight : Alignment.centerLeft,
+                  alignment: isUser
+                      ? Alignment.centerRight
+                      : Alignment.centerLeft,
                   child: Container(
                     constraints: const BoxConstraints(
                       maxWidth: 330,
@@ -651,9 +743,7 @@ $lengthInstruction
           ),
           if (isThinking)
             const Padding(
-              padding: EdgeInsets.only(
-                bottom: 4,
-              ),
+              padding: EdgeInsets.only(bottom: 4),
               child: Text(
                 '나온이 생각하고 있어요...',
                 style: TextStyle(
@@ -698,15 +788,17 @@ $lengthInstruction
           horizontal: 10,
           vertical: 2,
         ),
-        backgroundColor:
-            selected ? Colors.blue.shade100 : Colors.transparent,
+        backgroundColor: selected
+            ? Colors.blue.shade100
+            : Colors.transparent,
       ),
       child: Text(
         value,
         style: TextStyle(
           fontSize: 12,
-          fontWeight:
-              selected ? FontWeight.bold : FontWeight.normal,
+          fontWeight: selected
+              ? FontWeight.bold
+              : FontWeight.normal,
         ),
       ),
     );
