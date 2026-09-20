@@ -3,8 +3,9 @@ name: Build Flutter APK
 on:
   push:
     branches:
-      - main, na-on-avatar
-
+      - main
+      - na-on-avatar 
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
