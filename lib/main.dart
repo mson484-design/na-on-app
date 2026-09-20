@@ -900,63 +900,45 @@ $lengthInstruction
             ),
           ),
         ),
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 16,
-          child: Row(
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.94),
-                  border: Border.all(
-                    color: Colors.pinkAccent,
-                    width: 3,
-                  ),
+       Positioned(
+  top: 12,
+  right: 12,
+  child: Container(
+    width: 64,
+    height: 64,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: Colors.white.withOpacity(0.95),
+      border: Border.all(
+        color: Colors.pinkAccent,
+        width: 2,
+      ),
+    ),
+    child: ClipOval(
+      child: _avatarImage != null
+          ? Image.file(
+              _avatarImage!,
+              width: 64,
+              height: 64,
+              fit: BoxFit.cover,
+            )
+          : const Center(
+              child: Text(
+                '나온',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.pink,
                 ),
-                child: ClipOval(
-                  child: _avatarImage != null
-                      ? Image.file(
-                          _avatarImage!,
-                          width: 72,
-                          height: 72,
-                          fit: BoxFit.cover,
-                        )
-                      : const Center(
-                          child: Text(
-                            '나온',
-                            style: TextStyle(
-                              fontSize: 21,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.pink,
-                            ),
-                          ),
+              ),
+            ),
+    ),
+  ),
+),
                         ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.94),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child:  Text(
-                    _avatarImage == null
-                        ? '아바타 사진을 올려보세요.'
-                        : '$_avatarMood · $_avatarExpression',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+             
                 ),
               ),
             ],
