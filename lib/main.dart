@@ -867,7 +867,7 @@ $lengthInstruction
               color: Colors.black54,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(
+           child: const Text(
               '나온 아바타',
               style: TextStyle(
                 color: Colors.white,
@@ -925,7 +925,7 @@ $lengthInstruction
                     color: Colors.white.withOpacity(0.94),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Text(
+                  child:  Text(
                     _avatarImage == null
                         ? '아바타 사진을 올려보세요.'
                         : '$_avatarMood · $_avatarExpression',
