@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 List<CameraDescription> cameras = [];
@@ -58,6 +61,14 @@ class _NaonHomePageState extends State<NaonHomePage> {
   bool isListening = false;
   bool isThinking = false;
 
+  final ImagePicker _imagePicker = ImagePicker();
+  File? _avatarImage;
+  String _avatarMood = '자연스럽게';
+  String _avatarStyle = '편안한 일상복';
+  String _avatarExpression = '편안한 표정';
+  int _avatarSetupStep = 0;
+  bool _avatarSetupMode = false;
+
   String answerLength = '보통';
 
   final List<Map<String, String>> messages = [];
@@ -69,6 +80,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
     _initializeCamera();
     _initSpeech();
     _initTts();
+    _loadSavedAvatar();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _addNaonMessage(
@@ -76,6 +88,161 @@ class _NaonHomePageState extends State<NaonHomePage> {
         speak: false,
       );
     });
+  }
+
+  Future<void> _loadSavedAvatar() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final path = prefs.getString('naon_avatar_path');
+      final mood = prefs.getString('naon_avatar_mood');
+      final style = prefs.getString('naon_avatar_style');
+      final expression = prefs.getString('naon_avatar_expression');
+
+      if (!mounted) return;
+
+      setState(() {
+        if (path != null && File(path).existsSync()) {
+          _avatarImage = File(path);
+        }
+        if (mood != null && mood.isNotEmpty) _avatarMood = mood;
+        if (style != null && style.isNotEmpty) _avatarStyle = style;
+        if (expression != null && expression.isNotEmpty) {
+          _avatarExpression = expression;
+        }
+      });
+    } catch (e) {
+      debugPrint('아바타 불러오기 오류: $e');
+    }
+  }
+
+  Future<void> _pickAvatarPhoto() async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 88,
+        maxWidth: 1200,
+      );
+
+      if (picked == null) return;
+
+      final file = File(picked.path);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('naon_avatar_path', file.path);
+
+      if (!mounted) return;
+
+      setState(() {
+        _avatarImage = file;
+      });
+
+      _addNaonMessage(
+        '사진을 아바타 사진으로 설정했어요. 이제 "아바타 만들어줘"라고 말씀하시면 원하는 분위기, 스타일, 표정을 3가지로 맞춰드릴게요.',
+      );
+    } catch (e) {
+      debugPrint('아바타 사진 선택 오류: $e');
+      _showError('사진을 선택하지 못했습니다.');
+    }
+  }
+
+  bool _isAvatarCommand(String text) {
+    final t = text.replaceAll(' ', '');
+    return t.contains('아바타') &&
+        (t.contains('만들') ||
+            t.contains('생성') ||
+            t.contains('바꿔') ||
+            t.contains('교체') ||
+            t.contains('설정'));
+  }
+
+  Future<void> _startAvatarSetup() async {
+    _avatarSetupMode = true;
+    _avatarSetupStep = 0;
+
+    if (_avatarImage == null) {
+      _addNaonMessage(
+        '먼저 아바타로 사용할 사진을 올려주세요. 아래 📷 버튼을 누르면 휴대폰 사진에서 선택할 수 있어요.',
+      );
+      return;
+    }
+
+    _askNextAvatarQuestion();
+  }
+
+  void _askNextAvatarQuestion() {
+    if (!_avatarSetupMode) return;
+
+    if (_avatarSetupStep == 0) {
+      _addNaonMessage(
+        '첫 번째 질문이에요. 어떤 분위기의 아바타를 원하세요?\n① 밝고 귀엽게\n② 차분하고 세련되게\n③ 자연스럽게',
+      );
+    } else if (_avatarSetupStep == 1) {
+      _addNaonMessage(
+        '두 번째 질문이에요. 어떤 스타일로 보여드릴까요?\n① 편안한 일상복\n② 깔끔한 정장\n③ 원하는 스타일을 직접 말하기',
+      );
+    } else if (_avatarSetupStep == 2) {
+      _addNaonMessage(
+        '세 번째 질문이에요. 어떤 표정이 좋으세요?\n① 밝게 웃는 표정\n② 편안한 표정\n③ 진지하고 또렷한 표정',
+      );
+    }
+  }
+
+  Future<bool> _handleAvatarSetupAnswer(String answer) async {
+    if (!_avatarSetupMode) return false;
+
+    final t = answer.replaceAll(' ', '');
+
+    if (_avatarSetupStep == 0) {
+      if (t.contains('밝') || t.contains('귀엽') || t.contains('1')) {
+        _avatarMood = '밝고 귀엽게';
+      } else if (t.contains('차분') || t.contains('세련') || t.contains('2')) {
+        _avatarMood = '차분하고 세련되게';
+      } else {
+        _avatarMood = '자연스럽게';
+      }
+      _avatarSetupStep = 1;
+      _askNextAvatarQuestion();
+      return true;
+    }
+
+    if (_avatarSetupStep == 1) {
+      if (t.contains('정장') || t.contains('2')) {
+        _avatarStyle = '깔끔한 정장';
+      } else if (t.contains('직접') || t.contains('3')) {
+        _avatarStyle = answer.trim();
+      } else {
+        _avatarStyle = '편안한 일상복';
+      }
+      _avatarSetupStep = 2;
+      _askNextAvatarQuestion();
+      return true;
+    }
+
+    if (_avatarSetupStep == 2) {
+      if (t.contains('웃') || t.contains('밝') || t.contains('1')) {
+        _avatarExpression = '밝게 웃는 표정';
+      } else if (t.contains('진지') || t.contains('또렷') || t.contains('3')) {
+        _avatarExpression = '진지하고 또렷한 표정';
+      } else {
+        _avatarExpression = '편안한 표정';
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('naon_avatar_mood', _avatarMood);
+      await prefs.setString('naon_avatar_style', _avatarStyle);
+      await prefs.setString('naon_avatar_expression', _avatarExpression);
+
+      _avatarSetupMode = false;
+      _avatarSetupStep = 0;
+
+      if (mounted) setState(() {});
+
+      _addNaonMessage(
+        '아바타 설정을 완료했어요.\n분위기: $_avatarMood\n스타일: $_avatarStyle\n표정: $_avatarExpression\n\n이제 이 사진을 나온 아바타로 사용할게요. 음성도 분위기에 맞춰 조절합니다.',
+      );
+      return true;
+    }
+
+    return false;
   }
 
   Future<void> _initializeCamera() async {
@@ -250,6 +417,32 @@ class _NaonHomePageState extends State<NaonHomePage> {
 
   Future<void> _sendQuestion(String question) async {
     if (isThinking) {
+      return;
+    }
+
+    if (_avatarSetupMode) {
+      setState(() {
+        messages.add({
+          'type': 'user',
+          'text': question,
+        });
+        _textController.clear();
+      });
+      _scrollToBottom();
+      await _handleAvatarSetupAnswer(question);
+      return;
+    }
+
+    if (_isAvatarCommand(question)) {
+      setState(() {
+        messages.add({
+          'type': 'user',
+          'text': question,
+        });
+        _textController.clear();
+      });
+      _scrollToBottom();
+      await _startAvatarSetup();
       return;
     }
 
@@ -484,7 +677,13 @@ $lengthInstruction
       double rate = 0.38;
       double pitch = 0.95;
 
-      if (_isCheerful(text, lower)) {
+      if (_avatarMood == '밝고 귀엽게') {
+        rate = 0.45;
+        pitch = 1.08;
+      } else if (_avatarMood == '차분하고 세련되게') {
+        rate = 0.32;
+        pitch = 0.90;
+      } else if (_isCheerful(text, lower)) {
         rate = 0.45;
         pitch = 1.08;
       } else if (_isCalm(text, lower)) {
@@ -668,7 +867,7 @@ $lengthInstruction
               color: Colors.black54,
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Text(
+            child: Text(
               '나온 아바타',
               style: TextStyle(
                 color: Colors.white,
@@ -695,15 +894,24 @@ $lengthInstruction
                     width: 3,
                   ),
                 ),
-                child: const Center(
-                  child: Text(
-                    '나온',
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.pink,
-                    ),
-                  ),
+                child: ClipOval(
+                  child: _avatarImage != null
+                      ? Image.file(
+                          _avatarImage!,
+                          width: 72,
+                          height: 72,
+                          fit: BoxFit.cover,
+                        )
+                      : const Center(
+                          child: Text(
+                            '나온',
+                            style: TextStyle(
+                              fontSize: 21,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.pink,
+                            ),
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(width: 10),
@@ -718,7 +926,9 @@ $lengthInstruction
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Text(
-                    '나온 아바타가 함께 보고 있어요.',
+                    _avatarImage == null
+                        ? '아바타 사진을 올려보세요.'
+                        : '$_avatarMood · $_avatarExpression',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -890,6 +1100,11 @@ $lengthInstruction
             ),
           ),
           const SizedBox(width: 4),
+          IconButton(
+            tooltip: '아바타 사진',
+            onPressed: _pickAvatarPhoto,
+            icon: const Icon(Icons.photo_library_outlined),
+          ),
           IconButton(
             tooltip: '음성인식',
             onPressed: _toggleListening,
