@@ -27,7 +27,7 @@ class NaonApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: '나온 - 다정한 나온',
+      title: '나온 아바타',
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.light,
@@ -72,7 +72,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _addNaonMessage(
-        '안녕하세요. 저는 나온이에요. 지금 보이는 모습과 말씀을 바탕으로 편하게 도와드릴게요.',
+        '안녕하세요. 저는 나온 아바타예요. 지금 보이는 모습과 말씀을 바탕으로 편하게 도와드릴게요.',
         speak: false,
       );
     });
@@ -619,7 +619,7 @@ $lengthInstruction
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('나온 - 다정한 나온'),
+        title: const Text('나온 아바타'),
         centerTitle: true,
       ),
       body: SafeArea(
@@ -669,13 +669,64 @@ $lengthInstruction
               borderRadius: BorderRadius.circular(20),
             ),
             child: const Text(
-              '나온',
+              '나온 아바타',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
             ),
+          ),
+        ),
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 16,
+          child: Row(
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withOpacity(0.94),
+                  border: Border.all(
+                    color: Colors.pinkAccent,
+                    width: 3,
+                  ),
+                ),
+                child: const Center(
+                  child: Text(
+                    '나온',
+                    style: TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.pink,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.94),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Text(
+                    '나온 아바타가 함께 보고 있어요.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
