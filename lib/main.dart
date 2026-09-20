@@ -116,33 +116,56 @@ class _NaonHomePageState extends State<NaonHomePage> {
   }
 
   Future<void> _pickAvatarPhoto() async {
-    try {
-      final picked = await _imagePicker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 88,
-        maxWidth: 1200,
-      );
+  try {
+    // 1. 기존 아바타 정보 삭제
+    final prefs = await SharedPreferences.getInstance();
 
-      if (picked == null) return;
+    await prefs.remove('naon_avatar_path');
+    await prefs.remove('naon_avatar_mood');
+    await prefs.remove('naon_avatar_style');
+    await prefs.remove('naon_avatar_expression');
 
-      final file = File(picked.path);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('naon_avatar_path', file.path);
+    if (!mounted) return;
 
-      if (!mounted) return;
+    setState(() {
+      _avatarImage = null;
+      _avatarMood = '자연스럽게';
+      _avatarStyle = '편안한 일상복';
+      _avatarExpression = '편안한 표정';
+      _avatarSetupStep = 0;
+    });
 
-      setState(() {
-        _avatarImage = file;
-      });
+    // 2. 새 사진 선택
+    final picked = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 88,
+      maxWidth: 1200,
+    );
 
-      _addNaonMessage(
-        '사진을 아바타 사진으로 설정했어요. 이제 "아바타 만들어줘"라고 말씀하시면 원하는 분위기, 스타일, 표정을 3가지로 맞춰드릴게요.',
-      );
-    } catch (e) {
-      debugPrint('아바타 사진 선택 오류: $e');
-      _showError('사진을 선택하지 못했습니다.');
-    }
+    if (picked == null) return;
+
+    // 3. 새 사진 등록
+    final file = File(picked.path);
+
+    await prefs.setString(
+      'naon_avatar_path',
+      file.path,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _avatarImage = file;
+    });
+
+    _addNaonMessage(
+      '기존 아바타를 삭제하고 새 사진으로 등록했어요.',
+    );
+  } catch (e) {
+    debugPrint('아바타 사진 교체 오류: $e');
+    _showError('아바타 사진을 교체하지 못했습니다.');
   }
+}
 
   bool _isAvatarCommand(String text) {
     final t = text.replaceAll(' ', '');
