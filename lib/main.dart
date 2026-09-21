@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -63,6 +65,7 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
 
   final ImagePicker _imagePicker = ImagePicker();
   File? _styleSourceImage;
+  Uint8List? _avatarIllustrationBytes;
   late final AnimationController _avatarGlowController;
 
   String answerLength = '보통';
@@ -83,6 +86,7 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
     _initializeCamera();
     _initSpeech();
     _initTts();
+    _loadSavedAvatarIllustration();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _addNaonMessage(
@@ -93,36 +97,42 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
   }
 
   Future<void> _initializeCamera() async {
-    if (cameras.isEmpty) return;
-
-    CameraDescription selectedCamera = cameras.first;
-    for (final camera in cameras) {
-      if (camera.lensDirection == CameraLensDirection.front) {
-        selectedCamera = camera;
-        break;
-      }
-    }
-
-    try {
-      final controller = CameraController(
-        selectedCamera,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-      await controller.initialize();
-      if (!mounted) {
-        await controller.dispose();
+      if (cameras.isEmpty) {
         return;
       }
-      setState(() {
-        _cameraController = controller;
-        cameraReady = true;
-      });
-    } catch (e) {
-      debugPrint('카메라 실행 오류: $e');
+  
+      CameraDescription selectedCamera = cameras.first;
+  
+      for (final camera in cameras) {
+        if (camera.lensDirection == CameraLensDirection.front) {
+          selectedCamera = camera;
+          break;
+        }
+      }
+  
+      try {
+        final controller = CameraController(
+          selectedCamera,
+          ResolutionPreset.medium,
+          enableAudio: false,
+        );
+  
+        await controller.initialize();
+  
+        if (!mounted) {
+          await controller.dispose();
+          return;
+        }
+  
+        setState(() {
+          _cameraController = controller;
+          cameraReady = true;
+        });
+      } catch (e) {
+        debugPrint('카메라 실행 오류: $e');
+      }
     }
-  }
-
+  
   Future<void> _initSpeech() async {
       try {
         speechReady = await _speech.initialize(
@@ -254,6 +264,21 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
     }
   }
 
+  Future<void> _loadSavedAvatarIllustration() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('naon_avatar_illustration_base64');
+      if (saved == null || saved.isEmpty || !mounted) return;
+
+      final bytes = base64Decode(saved);
+      setState(() {
+        _avatarIllustrationBytes = Uint8List.fromList(bytes);
+      });
+    } catch (e) {
+      debugPrint('저장된 일러스트 불러오기 오류: $e');
+    }
+  }
+
   Future<void> _pickStyleSourceImage() async {
     try {
       final picked = await _imagePicker.pickImage(
@@ -261,89 +286,57 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
         imageQuality: 90,
       );
 
-      if (picked == null) {
-        return;
-      }
+      if (picked == null) return;
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _styleSourceImage = File(picked.path);
+        _avatarIllustrationBytes = null;
       });
 
       _addNaonMessage(
-        '사진을 등록했어요.\n원하는 코디나 화장을 말씀하시고 "보여줘"라고 해보세요.',
+        '사진을 등록했어요. 먼저 나를 알아볼 수 있는 일러스트를 만들어볼게요.',
         speak: true,
       );
+
+      await _generateAvatarIllustration();
     } catch (e) {
       debugPrint('스타일 사진 선택 오류: $e');
       _showError('사진을 불러오지 못했어요.');
     }
   }
 
-  bool _isStylePreviewRequest(String text) {
-    final lower = text.toLowerCase();
-    final show = lower.contains('보여줘') ||
-        lower.contains('보여 줘') ||
-        lower.contains('그려줘') ||
-        lower.contains('그려 줘') ||
-        lower.contains('미리') ||
-        lower.contains('예상') ||
-        lower.contains('모습');
-
-    final imageTopic = lower.contains('코디') ||
-        lower.contains('화장') ||
-        lower.contains('메이크업') ||
-        lower.contains('립') ||
-        lower.contains('옷') ||
-        lower.contains('스타일') ||
-        lower.contains('색') ||
-        lower.contains('정장') ||
-        lower.contains('캐주얼') ||
-        lower.contains('들판') ||
-        lower.contains('바닷가') ||
-        lower.contains('바다') ||
-        lower.contains('카페') ||
-        lower.contains('여행') ||
-        lower.contains('배경') ||
-        lower.contains('사진') ||
-        lower.contains('일러스트');
-
-    return show && imageTopic;
-  }
-
-  Future<void> _generateStylePreview(String request) async {
-    if (_styleSourceImage == null) {
-      const message = '먼저 사진 버튼으로 사진을 등록해주세요.';
-      _addNaonMessage(message, speak: true);
-      return;
-    }
+  Future<void> _generateAvatarIllustration() async {
+    final source = _styleSourceImage;
+    if (source == null) return;
 
     const apiKey = String.fromEnvironment('OPENAI_API_KEY');
     if (apiKey.isEmpty) {
-      const message = '요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.';
-      _addNaonMessage(message, speak: true);
+      _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
       return;
     }
 
+    if (mounted) {
+      setState(() {
+        isThinking = true;
+      });
+    }
+
     try {
-      final bytes = await _styleSourceImage!.readAsBytes();
+      final bytes = await source.readAsBytes();
       final imageData = base64Encode(bytes);
 
-      final prompt = """
-등록한 사진 속 인물을 참고해서 사용자가 자신임을 알아볼 수 있는 개인 일러스트를 만들어주세요.
-실사 사진을 그대로 복사하지 말고 자연스럽고 깔끔한 일러스트로 표현하세요.
-얼굴의 주요 특징, 헤어스타일과 전체적인 인상은 가능한 한 유지하세요.
-사용자의 요청을 일러스트에 자연스럽게 반영하세요.
-사용자의 요청: $request
-옷, 화장, 립 컬러, 헤어스타일, 배경 등의 요청이 있다면 반영하세요.
-한 사람만 나오게 하고 글자와 워터마크는 넣지 마세요.
-""";
+      final prompt = '''
+등록한 사진 속 사람을 참고해서 그 사람임을 알아볼 수 있는 따뜻하고 정감 있는 사용자 일러스트 초상화를 만들어주세요.
+사진을 그대로 복사한 실사 사진이 아니라, 손자가 그려준 듯한 친근하고 부드러운 캐릭터 초상화 느낌으로 단순화해주세요.
+얼굴형, 헤어스타일, 안경 등 알아볼 수 있는 특징은 유지하고 피부의 세세한 주름이나 사진의 잡다한 배경은 단순화하세요.
+상반신 중심, 정면에 가까운 구도, 부드러운 파스텔 계열, 깨끗한 선과 따뜻한 표정으로 만들어주세요.
+글자, 말풍선, 로고, 소품, 복잡한 배경은 넣지 마세요.
+''';
 
       final body = {
-        'model': 'gpt-5.6-sol',
+        'model': 'gpt-6-astra',
         'input': [
           {
             'role': 'user',
@@ -352,6 +345,7 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
               {
                 'type': 'input_image',
                 'image_url': 'data:image/jpeg;base64,$imageData',
+                'detail': 'auto',
               },
             ],
           },
@@ -359,8 +353,8 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
         'tools': [
           {
             'type': 'image_generation',
-            'model': 'gpt-image-2',
-            'size': '1024x1024',
+            'model': 'gpt-image-2.5-sunburst',
+            'size': '512x512',
             'quality': 'low',
             'background': 'opaque',
             'action': 'edit',
@@ -379,8 +373,177 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint('이미지 생성 HTTP ${response.statusCode}: ${response.body}');
-        throw Exception('이미지 생성 HTTP ${response.statusCode}');
+        debugPrint('사용자 일러스트 HTTP ${response.statusCode}: ${response.body}');
+        throw Exception('사용자 일러스트 HTTP ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body);
+      String? generatedBase64;
+      final output = data['output'];
+      if (output is List) {
+        for (final item in output) {
+          if (item is Map && item['type'] == 'image_generation_call') {
+            final result = item['result'];
+            if (result is String && result.isNotEmpty) {
+              generatedBase64 = result;
+              break;
+            }
+          }
+        }
+      }
+
+      if (generatedBase64 == null || generatedBase64.isEmpty) {
+        throw Exception('생성된 사용자 일러스트가 없습니다.');
+      }
+
+      final generatedBytes = Uint8List.fromList(base64Decode(generatedBase64));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'naon_avatar_illustration_base64',
+        generatedBase64,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _avatarIllustrationBytes = generatedBytes;
+        isThinking = false;
+      });
+
+      final dir = Directory.systemTemp;
+      final file = File(
+        '${dir.path}/naon_avatar_illustration_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await file.writeAsBytes(generatedBytes);
+
+      setState(() {
+        messages.add({
+          'type': 'naon',
+          'text': '나를 닮은 일러스트를 만들었어요. 이제 코디나 화장을 바꿔서 볼 수 있어요.',
+          'imagePath': file.path,
+        });
+      });
+      _scrollToBottom();
+      await _speak('나를 닮은 일러스트를 만들었어요. 이제 코디나 화장을 바꿔서 볼 수 있어요.');
+    } catch (e) {
+      debugPrint('사용자 일러스트 생성 오류: $e');
+      if (!mounted) return;
+      setState(() {
+        isThinking = false;
+      });
+      _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
+    }
+  }
+
+  bool _isStylePreviewRequest(String text) {
+    final lower = text.toLowerCase();
+    final show = lower.contains('보여줘') ||
+        lower.contains('보여 줘') ||
+        lower.contains('미리') ||
+        lower.contains('예상') ||
+        lower.contains('그려줘') ||
+        lower.contains('그려 줘');
+
+    final imageTopic = lower.contains('코디') ||
+        lower.contains('화장') ||
+        lower.contains('메이크업') ||
+        lower.contains('립') ||
+        lower.contains('옷') ||
+        lower.contains('스타일') ||
+        lower.contains('색') ||
+        lower.contains('정장') ||
+        lower.contains('캐주얼') ||
+        lower.contains('일러스트') ||
+        lower.contains('사진') ||
+        lower.contains('모습') ||
+        lower.contains('들판') ||
+        lower.contains('바닷가') ||
+        lower.contains('바다') ||
+        lower.contains('배경') ||
+        lower.contains('여행') ||
+        lower.contains('장소');
+
+    return show && imageTopic;
+  }
+
+  Future<void> _generateStylePreview(String request) async {
+    if (_styleSourceImage == null && _avatarIllustrationBytes == null) {
+      final message = '먼저 사진 버튼으로 사진을 등록해주세요.';
+      if (mounted) {
+        setState(() {
+          messages.add({'type': 'naon', 'text': message});
+        });
+        _scrollToBottom();
+      }
+      await _speak(message);
+      return;
+    }
+
+    const apiKey = String.fromEnvironment('OPENAI_API_KEY');
+    if (apiKey.isEmpty) {
+      final message = '사진 요청을 처리할 AI 연결에 문제가 있어요. 나중에 다시 시도해주세요.';
+      if (mounted) {
+        setState(() {
+          messages.add({'type': 'naon', 'text': message});
+          isThinking = false;
+        });
+      }
+      await _speak(message);
+      return;
+    }
+
+    try {
+      final sourceBytes = _avatarIllustrationBytes ??
+          await _styleSourceImage!.readAsBytes();
+      final imageData = base64Encode(sourceBytes);
+
+      final prompt = """
+기준 이미지는 사용자의 정감 있는 개인 일러스트입니다.
+이 일러스트 속 인물이 같은 사람으로 알아볼 수 있도록 특징과 일러스트 화풍을 유지하세요.
+사용자의 요청을 반영해 옷, 화장, 색상 또는 배경을 자연스럽게 바꿔주세요.
+사용자의 요청: $request
+과도한 실사화나 완전히 다른 얼굴로의 변경은 피하세요.
+한 사람만 나오게 하고, 불필요한 글자나 워터마크는 넣지 마세요.
+""";
+
+      final body = {
+        'model': 'gpt-6-astra',
+        'input': [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'input_text', 'text': prompt},
+              {
+                'type': 'input_image',
+                'image_url': 'data:image/jpeg;base64,$imageData',
+              },
+            ],
+          },
+        ],
+        'tools': [
+          {
+            'type': 'image_generation',
+            'model': 'gpt-image-2.5-sunburst',
+            'size': '512x512',
+            'quality': 'low',
+            'background': 'opaque',
+            'action': 'edit',
+          },
+        ],
+        'tool_choice': {'type': 'image_generation'},
+      };
+
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/responses'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('스타일 미리보기 HTTP ${response.statusCode}: ${response.body}');
+        throw Exception('스타일 미리보기 HTTP ${response.statusCode}');
       }
 
       final data = jsonDecode(response.body);
@@ -400,11 +563,12 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       }
 
       if (generatedBase64 == null || generatedBase64.isEmpty) {
-        throw Exception('생성된 이미지가 없습니다.');
+        throw Exception('생성된 미리보기 이미지가 없습니다.');
       }
 
+      final dir = Directory.systemTemp;
       final file = File(
-        '${Directory.systemTemp.path}/naon_illustration_${DateTime.now().millisecondsSinceEpoch}.png',
+        '${dir.path}/naon_style_preview_${DateTime.now().millisecondsSinceEpoch}.png',
       );
       await file.writeAsBytes(base64Decode(generatedBase64));
 
@@ -413,20 +577,23 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       setState(() {
         messages.add({
           'type': 'naon',
-          'text': '요청하신 모습을 일러스트로 보여드릴게요.',
+          'text': '요청하신 스타일을 미리 보여드릴게요.',
           'imagePath': file.path,
         });
         isThinking = false;
       });
       _scrollToBottom();
-      await _speak('요청하신 모습을 일러스트로 보여드릴게요.');
+      await _speak('요청하신 스타일을 미리 보여드릴게요.');
     } catch (e) {
-      debugPrint('이미지 생성 오류: $e');
+      debugPrint('스타일 미리보기 오류: $e');
+
       if (!mounted) return;
+
       setState(() {
         isThinking = false;
       });
-      const message = '요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.';
+
+      final message = '사진 요청을 처리하는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.';
       _showError(message);
     }
   }
