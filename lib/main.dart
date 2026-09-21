@@ -79,6 +79,93 @@ class _NaonHomePageState extends State<NaonHomePage> {
     });
   }
 
+  Future<void> _initializeCamera() async {
+      if (cameras.isEmpty) {
+        return;
+      }
+  
+      CameraDescription selectedCamera = cameras.first;
+  
+      for (final camera in cameras) {
+        if (camera.lensDirection == CameraLensDirection.front) {
+          selectedCamera = camera;
+          break;
+        }
+      }
+  
+      try {
+        final controller = CameraController(
+          selectedCamera,
+          ResolutionPreset.medium,
+          enableAudio: false,
+        );
+  
+        await controller.initialize();
+  
+        if (!mounted) {
+          await controller.dispose();
+          return;
+        }
+  
+        setState(() {
+          _cameraController = controller;
+          cameraReady = true;
+        });
+      } catch (e) {
+        debugPrint('카메라 실행 오류: $e');
+      }
+    }
+  
+  Future<void> _initSpeech() async {
+      try {
+        speechReady = await _speech.initialize(
+          onStatus: (status) {
+            debugPrint('음성인식 상태: $status');
+  
+            if (status == 'notListening' && mounted) {
+              setState(() {
+                isListening = false;
+              });
+            }
+          },
+          onError: (error) {
+            debugPrint('음성인식 오류: ${error.errorMsg}');
+  
+            if (mounted) {
+              setState(() {
+                isListening = false;
+              });
+  
+              _showError('음성인식 오류\n${error.errorMsg}');
+            }
+          },
+        );
+  
+        if (mounted) {
+          setState(() {});
+        }
+      } catch (e) {
+        debugPrint('음성인식 초기화 오류: $e');
+  
+        if (mounted) {
+          setState(() {
+            speechReady = false;
+          });
+        }
+      }
+    }
+  
+  Future<void> _initTts() async {
+      try {
+        await _tts.setLanguage('ko-KR');
+        await _tts.setSpeechRate(0.38);
+        await _tts.setPitch(0.95);
+        await _tts.setVolume(1.0);
+      } catch (e) {
+        debugPrint('TTS 초기화 오류: $e');
+      }
+    }
+
   Future<void> _toggleListening() async {
     if (!speechReady) {
       _showError(
