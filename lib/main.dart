@@ -324,53 +324,30 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
     }
 
     try {
-      final bytes = await source.readAsBytes();
-      final imageData = base64Encode(bytes);
-
       final prompt = '''
 등록한 사진 속 사람을 참고해서 그 사람임을 알아볼 수 있는 따뜻하고 정감 있는 사용자 일러스트 초상화를 만들어주세요.
 사진을 그대로 복사한 실사 사진이 아니라, 손자가 그려준 듯한 친근하고 부드러운 캐릭터 초상화 느낌으로 단순화해주세요.
-얼굴형, 헤어스타일, 안경 등 알아볼 수 있는 특징은 유지하고 피부의 세세한 주름이나 사진의 잡다한 배경은 단순화하세요.
-상반신 중심, 정면에 가까운 구도, 부드러운 파스텔 계열, 깨끗한 선과 따뜻한 표정으로 만들어주세요.
-글자, 말풍선, 로고, 소품, 복잡한 배경은 넣지 마세요.
+얼굴형, 헤어스타일, 안경 등 알아볼 수 있는 특징은 유지하고 세세한 피부 표현과 사진 배경은 단순화하세요.
+상반신 중심, 정면에 가까운 구도, 부드러운 파스텔 색감, 깨끗한 선, 따뜻한 표정으로 만들어주세요.
+글자, 말풍선, 로고, 복잡한 소품과 복잡한 배경은 넣지 마세요.
 ''';
 
-      final body = {
-        'model': 'gpt-6-astra',
-        'input': [
-          {
-            'role': 'user',
-            'content': [
-              {'type': 'input_text', 'text': prompt},
-              {
-                'type': 'input_image',
-                'image_url': 'data:image/jpeg;base64,$imageData',
-                'detail': 'auto',
-              },
-            ],
-          },
-        ],
-        'tools': [
-          {
-            'type': 'image_generation',
-            'model': 'gpt-image-2.5-sunburst',
-            'size': '512x512',
-            'quality': 'low',
-            'background': 'opaque',
-            'action': 'edit',
-          },
-        ],
-        'tool_choice': {'type': 'image_generation'},
-      };
-
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/responses'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode(body),
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('https://api.openai.com/v1/images/edits'),
       );
+      request.headers['Authorization'] = 'Bearer $apiKey';
+      request.files.add(
+        await http.MultipartFile.fromPath('image', source.path),
+      );
+      request.fields['model'] = 'gpt-image-2.5-sunburst';
+      request.fields['prompt'] = prompt;
+      request.fields['size'] = '512x512';
+      request.fields['quality'] = 'low';
+      request.fields['output_format'] = 'png';
+
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         debugPrint('사용자 일러스트 HTTP ${response.statusCode}: ${response.body}');
@@ -379,15 +356,13 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
 
       final data = jsonDecode(response.body);
       String? generatedBase64;
-      final output = data['output'];
-      if (output is List) {
-        for (final item in output) {
-          if (item is Map && item['type'] == 'image_generation_call') {
-            final result = item['result'];
-            if (result is String && result.isNotEmpty) {
-              generatedBase64 = result;
-              break;
-            }
+      final resultList = data['data'];
+      if (resultList is List && resultList.isNotEmpty) {
+        final first = resultList.first;
+        if (first is Map) {
+          final value = first['b64_json'];
+          if (value is String && value.isNotEmpty) {
+            generatedBase64 = value;
           }
         }
       }
@@ -398,24 +373,17 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
 
       final generatedBytes = Uint8List.fromList(base64Decode(generatedBase64));
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        'naon_avatar_illustration_base64',
-        generatedBase64,
+      await prefs.setString('naon_avatar_illustration_base64', generatedBase64);
+
+      final file = File(
+        '${Directory.systemTemp.path}/naon_avatar_illustration_${DateTime.now().millisecondsSinceEpoch}.png',
       );
+      await file.writeAsBytes(generatedBytes);
 
       if (!mounted) return;
       setState(() {
         _avatarIllustrationBytes = generatedBytes;
         isThinking = false;
-      });
-
-      final dir = Directory.systemTemp;
-      final file = File(
-        '${dir.path}/naon_avatar_illustration_${DateTime.now().millisecondsSinceEpoch}.png',
-      );
-      await file.writeAsBytes(generatedBytes);
-
-      setState(() {
         messages.add({
           'type': 'naon',
           'text': '나를 닮은 일러스트를 만들었어요. 이제 코디나 화장을 바꿔서 볼 수 있어요.',
