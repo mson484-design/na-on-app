@@ -861,92 +861,62 @@ $lengthInstruction
     );
   }
 
-  Widget _buildCameraArea() {
-    if (!cameraReady ||
-        _cameraController == null ||
-        !_cameraController!.value.isInitialized) {
-      return Container(
-        width: double.infinity,
-        color: Colors.black,
-        child: const Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        CameraPreview(_cameraController!),
-        Positioned(
-          left: 12,
-          top: 12,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 7,
-            ),
-            decoration: BoxDecoration(
-              color: Colors.black54,
-              borderRadius: BorderRadius.circular(20),
-            ),
-           child: const Text(
-              '나온 아바타',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ),
-       Positioned(
-  top: 12,
-  right: 12,
-  child: Container(
-    width: 64,
-    height: 64,
-    decoration: BoxDecoration(
-      shape: BoxShape.circle,
-      color: Colors.white.withOpacity(0.95),
-      border: Border.all(
-        color: Colors.pinkAccent,
-        width: 2,
+ Widget _buildCameraArea() {
+  if (!cameraReady ||
+      _cameraController == null ||
+      !_cameraController!.value.isInitialized) {
+    return Container(
+      width: double.infinity,
+      color: Colors.black,
+      child: const Center(
+        child: CircularProgressIndicator(),
       ),
-    ),
-    child: ClipOval(
-      child: _avatarImage != null
-          ? Image.file(
-              _avatarImage!,
-              width: 64,
-              height: 64,
-              fit: BoxFit.cover,
-            )
-          : const Center(
-              child: Text(
-                '나온',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.pink,
-                ),
-              ),
-            ),
-    ),
-  ),
-),
-                        ),
-                ),
-              ),
-             
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
+
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      CameraPreview(_cameraController!),
+
+      Positioned(
+        top: 12,
+        right: 12,
+        child: Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withOpacity(0.95),
+            border: Border.all(
+              color: Colors.pinkAccent,
+              width: 2,
+            ),
+          ),
+          child: ClipOval(
+            child: _avatarImage != null
+                ? Image.file(
+                    _avatarImage!,
+                    width: 64,
+                    height: 64,
+                    fit: BoxFit.cover,
+                  )
+                : const Center(
+                    child: Text(
+                      '나온',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.pink,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    ],
+  );
+}
 
   Widget _buildChatArea() {
     return Container(
