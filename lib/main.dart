@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 List<CameraDescription> cameras = [];
@@ -407,7 +406,7 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
         throw Exception('생성된 미리보기 이미지가 없습니다.');
       }
 
-      final dir = await getTemporaryDirectory();
+      final dir = Directory.systemTemp;
       final file = File(
         '${dir.path}/naon_style_preview_${DateTime.now().millisecondsSinceEpoch}.png',
       );
