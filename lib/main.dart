@@ -70,7 +70,6 @@ class _NaonHomePageState extends State<NaonHomePage> {
     _initializeCamera();
     _initSpeech();
     _initTts();
-    _loadSavedAvatar();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _addNaonMessage(
@@ -78,6 +77,78 @@ class _NaonHomePageState extends State<NaonHomePage> {
         speak: false,
       );
     });
+  }
+
+  Future<void> _toggleListening() async {
+    if (!speechReady) {
+      _showError(
+        '음성인식을 사용할 수 없습니다.\n휴대폰의 마이크 권한을 확인해주세요.',
+      );
+      return;
+    }
+
+    if (isListening) {
+      await _speech.stop();
+
+      if (mounted) {
+        setState(() {
+          isListening = false;
+        });
+      }
+
+      return;
+    }
+
+    try {
+      await _tts.stop();
+
+      if (mounted) {
+        setState(() {
+          isListening = true;
+        });
+      }
+
+      await _speech.listen(
+        localeId: 'ko-KR',
+        partialResults: true,
+        onResult: (result) {
+          if (!mounted) {
+            return;
+          }
+
+          setState(() {
+            _textController.text = result.recognizedWords;
+            _textController.selection = TextSelection.fromPosition(
+              TextPosition(
+                offset: _textController.text.length,
+              ),
+            );
+          });
+
+          if (result.finalResult) {
+            final text = result.recognizedWords.trim();
+
+            setState(() {
+              isListening = false;
+            });
+
+            if (text.isNotEmpty) {
+              _sendQuestion(text);
+            }
+          }
+        },
+      );
+    } catch (e) {
+      debugPrint('음성인식 실행 오류: $e');
+
+      if (mounted) {
+        setState(() {
+          isListening = false;
+        });
+
+        _showError('음성인식을 시작하지 못했습니다.');
+      }
+    }
   }
 
   Future<void> _sendTextQuestion() async {
@@ -710,11 +781,6 @@ $lengthInstruction
             ),
           ),
           const SizedBox(width: 4),
-          IconButton(
-            tooltip: '아바타 사진',
-            onPressed: _pickAvatarPhoto,
-            icon: const Icon(Icons.photo_library_outlined),
-          ),
           IconButton(
             tooltip: '음성인식',
             onPressed: _toggleListening,
