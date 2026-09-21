@@ -260,12 +260,128 @@ class _NaonHomePageState extends State<NaonHomePage> {
       if (mounted) setState(() {});
 
       _addNaonMessage(
-        '아바타 설정을 완료했어요.\n분위기: $_avatarMood\n스타일: $_avatarStyle\n표정: $_avatarExpression\n\n이제 이 사진을 나온 아바타로 사용할게요. 음성도 분위기에 맞춰 조절합니다.',
+        '3가지 설정이 끝났어요. 이제 등록한 사진을 바탕으로 나온 캐릭터를 만들게요.',
+        speak: false,
       );
+
+      await _generateAvatarCharacter();
       return true;
     }
 
     return false;
+  }
+
+  Future<void> _generateAvatarCharacter() async {
+    if (_avatarImage == null) {
+      _showError('먼저 아바타 사진을 등록해주세요.');
+      return;
+    }
+
+    const apiKey = String.fromEnvironment('OPENAI_API_KEY');
+    if (apiKey.isEmpty) {
+      _showError('OPENAI_API_KEY가 없습니다.');
+      return;
+    }
+
+    try {
+      final sourceFile = _avatarImage!;
+      final bytes = await sourceFile.readAsBytes();
+      final imageData = base64Encode(bytes);
+
+      final prompt = """
+등록한 사진 속 사람을 참고해서 '나온'이라는 개인 AI 아바타 캐릭터를 만들어주세요.
+사진 속 인물의 얼굴 특징과 전체적인 인상을 최대한 자연스럽게 유지하되,
+실사 사진 그대로가 아니라 친근하고 깔끔한 캐릭터형 아바타로 변환해주세요.
+상반신 중심의 정면 또는 약간의 3/4 방향, 얼굴이 잘 보이게 만들어주세요.
+작은 화면의 원형 아바타에서 잘 보이도록 단순하고 선명하게 표현해주세요.
+분위기: $_avatarMood
+스타일: $_avatarStyle
+표정: $_avatarExpression
+배경은 투명하게 만들고 캐릭터만 나오게 해주세요.
+텍스트나 글자는 넣지 마세요.
+""";
+
+      final body = {
+        'model': 'gpt-5.6-luna',
+        'input': [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'input_text', 'text': prompt},
+              {
+                'type': 'input_image',
+                'image_url': 'data:image/jpeg;base64,$imageData',
+              },
+            ],
+          },
+        ],
+        'tools': [
+          {
+            'type': 'image_generation',
+            'model': 'gpt-image-2',
+            'size': '1024x1024',
+            'quality': 'low',
+            'background': 'transparent',
+          },
+        ],
+        'tool_choice': 'required',
+      };
+
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/responses'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('아바타 생성 오류: ${response.body}');
+        throw Exception('이미지 생성 HTTP ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body);
+      String? generatedBase64;
+      final output = data['output'];
+
+      if (output is List) {
+        for (final item in output) {
+          if (item is Map && item['type'] == 'image_generation_call') {
+            final result = item['result'];
+            if (result is String && result.isNotEmpty) {
+              generatedBase64 = result;
+              break;
+            }
+          }
+        }
+      }
+
+      if (generatedBase64 == null || generatedBase64.isEmpty) {
+        throw Exception('생성된 아바타 이미지가 없습니다.');
+      }
+
+      final generatedFile = File(
+        '${sourceFile.parent.path}/naon_avatar_generated.png',
+      );
+      await generatedFile.writeAsBytes(base64Decode(generatedBase64));
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('naon_avatar_path', generatedFile.path);
+
+      if (!mounted) return;
+
+      setState(() {
+        _avatarImage = generatedFile;
+      });
+
+      _addNaonMessage(
+        '나온 캐릭터 아바타가 완성됐어요. 이제 오른쪽 위에서 나온이 함께할게요.',
+      );
+    } catch (e) {
+      debugPrint('나온 캐릭터 생성 오류: $e');
+      _showError('캐릭터 생성에 실패했습니다. 사진과 인터넷 연결을 확인해주세요.');
+    }
   }
 
   Future<void> _initializeCamera() async {
