@@ -302,7 +302,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
 """;
 
       final body = {
-        'model': 'gpt-5',
+        'model': 'gpt-5.6-sol',
         'input': [
           {
             'role': 'user',
@@ -322,9 +322,10 @@ class _NaonHomePageState extends State<NaonHomePage> {
             'size': '1024x1024',
             'quality': 'low',
             'background': 'opaque',
+            'action': 'edit',
           },
         ],
-        'tool_choice': 'required',
+        'tool_choice': {'type': 'image_generation'},
       };
 
       final response = await http.post(
