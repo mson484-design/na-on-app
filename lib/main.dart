@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -296,9 +297,20 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       });
 
       _addNaonMessage(
-        '사진을 등록했어요. 먼저 나를 알아볼 수 있는 일러스트를 만들어볼게요.',
+        '사진을 등록했어요.',
         speak: true,
       );
+
+      if (mounted) {
+        setState(() {
+          isThinking = true;
+          messages.add({
+            'type': 'naon',
+            'text': '나만의 일러스트를 만들고 있어요… 잠시만 기다려 주세요.',
+          });
+        });
+        _scrollToBottom();
+      }
 
       await _generateAvatarIllustration();
     } catch (e) {
@@ -313,7 +325,11 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
 
     const apiKey = String.fromEnvironment('OPENAI_API_KEY');
     if (apiKey.isEmpty) {
-      _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
+      if (e is TimeoutException) {
+        _showError('일러스트를 만드는 데 시간이 오래 걸리고 있어요. 잠시 후 다시 시도해주세요.');
+      } else {
+        _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
+      }
       return;
     }
 
@@ -338,7 +354,7 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       );
       request.headers['Authorization'] = 'Bearer $apiKey';
       request.files.add(
-        await http.MultipartFile.fromPath('image', source.path),
+        await http.MultipartFile.fromPath('image[]', source.path),
       );
       request.fields['model'] = 'gpt-image-2.5-sunburst';
       request.fields['prompt'] = prompt;
@@ -346,7 +362,10 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       request.fields['quality'] = 'low';
       request.fields['output_format'] = 'png';
 
-      final streamed = await request.send();
+      final streamed = await request.send().timeout(
+        const Duration(seconds: 120),
+        onTimeout: () => throw TimeoutException('이미지 생성 시간이 초과되었습니다.'),
+      );
       final response = await http.Response.fromStream(streamed);
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -398,7 +417,11 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       setState(() {
         isThinking = false;
       });
-      _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
+      if (e is TimeoutException) {
+        _showError('일러스트를 만드는 데 시간이 오래 걸리고 있어요. 잠시 후 다시 시도해주세요.');
+      } else {
+        _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
+      }
     }
   }
 
