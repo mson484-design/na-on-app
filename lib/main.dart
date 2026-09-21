@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 List<CameraDescription> cameras = [];
@@ -43,7 +46,7 @@ class NaonHomePage extends StatefulWidget {
   State<NaonHomePage> createState() => _NaonHomePageState();
 }
 
-class _NaonHomePageState extends State<NaonHomePage> {
+class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderStateMixin {
   CameraController? _cameraController;
 
   final FlutterTts _tts = FlutterTts();
@@ -59,6 +62,10 @@ class _NaonHomePageState extends State<NaonHomePage> {
 
   bool _avatarSpeaking = false;
 
+  final ImagePicker _imagePicker = ImagePicker();
+  File? _styleSourceImage;
+  late final AnimationController _avatarGlowController;
+
   String answerLength = '보통';
 
   final List<Map<String, String>> messages = [];
@@ -66,6 +73,13 @@ class _NaonHomePageState extends State<NaonHomePage> {
   @override
   void initState() {
     super.initState();
+
+    _avatarGlowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+      lowerBound: 0.0,
+      upperBound: 1.0,
+    );
 
     _initializeCamera();
     _initSpeech();
@@ -161,6 +175,15 @@ class _NaonHomePageState extends State<NaonHomePage> {
         await _tts.setSpeechRate(0.38);
         await _tts.setPitch(0.95);
         await _tts.setVolume(1.0);
+        _tts.setCompletionHandler(() {
+          if (mounted) {
+            setState(() {
+              _avatarSpeaking = false;
+            });
+            _avatarGlowController.stop();
+            _avatarGlowController.value = 0.0;
+          }
+        });
       } catch (e) {
         debugPrint('TTS 초기화 오류: $e');
       }
@@ -238,6 +261,184 @@ class _NaonHomePageState extends State<NaonHomePage> {
     }
   }
 
+  Future<void> _pickStyleSourceImage() async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 90,
+      );
+
+      if (picked == null) {
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _styleSourceImage = File(picked.path);
+      });
+
+      _addNaonMessage(
+        '사진을 등록했어요.\n원하는 코디나 화장을 말씀하시고 "보여줘"라고 해보세요.',
+        speak: true,
+      );
+    } catch (e) {
+      debugPrint('스타일 사진 선택 오류: $e');
+      _showError('사진을 불러오지 못했어요.');
+    }
+  }
+
+  bool _isStylePreviewRequest(String text) {
+    final lower = text.toLowerCase();
+    return (lower.contains('보여줘') ||
+            lower.contains('보여 줘') ||
+            lower.contains('미리') ||
+            lower.contains('예상')) &&
+        (lower.contains('코디') ||
+            lower.contains('화장') ||
+            lower.contains('메이크업') ||
+            lower.contains('립') ||
+            lower.contains('옷') ||
+            lower.contains('스타일') ||
+            lower.contains('색') ||
+            lower.contains('정장') ||
+            lower.contains('캐주얼'));
+  }
+
+  Future<void> _generateStylePreview(String request) async {
+    if (_styleSourceImage == null) {
+      final message = '먼저 아래 사진 버튼으로 사진을 등록해주세요.';
+      if (mounted) {
+        setState(() {
+          messages.add({'type': 'naon', 'text': message});
+        });
+        _scrollToBottom();
+      }
+      await _speak(message);
+      return;
+    }
+
+    const apiKey = String.fromEnvironment('OPENAI_API_KEY');
+    if (apiKey.isEmpty) {
+      final message = 'AI 연결 설정에 문제가 있어요. 나중에 다시 시도해주세요.';
+      if (mounted) {
+        setState(() {
+          messages.add({'type': 'naon', 'text': message});
+          isThinking = false;
+        });
+      }
+      await _speak(message);
+      return;
+    }
+
+    try {
+      final bytes = await _styleSourceImage!.readAsBytes();
+      final imageData = base64Encode(bytes);
+
+      final prompt = """
+등록한 사진 속 인물을 참고해서 스타일 미리보기 이미지를 만들어주세요.
+원본 인물의 얼굴과 정체성을 자연스럽게 유지하고, 다른 사람으로 바꾸지 마세요.
+사진을 참고한 자연스러운 실제 스타일 미리보기로 만들어주세요.
+사용자의 요청: $request
+얼굴을 과도하게 바꾸거나 피부를 비현실적으로 수정하지 마세요.
+사진 한 장 안에 한 사람만 나오게 하고, 글자나 워터마크는 넣지 마세요.
+""";
+
+      final body = {
+        'model': 'gpt-5.6-sol',
+        'input': [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'input_text', 'text': prompt},
+              {
+                'type': 'input_image',
+                'image_url': 'data:image/jpeg;base64,$imageData',
+              },
+            ],
+          },
+        ],
+        'tools': [
+          {
+            'type': 'image_generation',
+            'model': 'gpt-image-2',
+            'size': '1024x1024',
+            'quality': 'low',
+            'background': 'opaque',
+            'action': 'edit',
+          },
+        ],
+        'tool_choice': {'type': 'image_generation'},
+      };
+
+      final response = await http.post(
+        Uri.parse('https://api.openai.com/v1/responses'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $apiKey',
+        },
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('스타일 미리보기 HTTP ${response.statusCode}: ${response.body}');
+        throw Exception('스타일 미리보기 HTTP ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body);
+      String? generatedBase64;
+      final output = data['output'];
+
+      if (output is List) {
+        for (final item in output) {
+          if (item is Map && item['type'] == 'image_generation_call') {
+            final result = item['result'];
+            if (result is String && result.isNotEmpty) {
+              generatedBase64 = result;
+              break;
+            }
+          }
+        }
+      }
+
+      if (generatedBase64 == null || generatedBase64.isEmpty) {
+        throw Exception('생성된 미리보기 이미지가 없습니다.');
+      }
+
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/naon_style_preview_${DateTime.now().millisecondsSinceEpoch}.png',
+      );
+      await file.writeAsBytes(base64Decode(generatedBase64));
+
+      if (!mounted) return;
+
+      setState(() {
+        messages.add({
+          'type': 'naon',
+          'text': '요청하신 스타일을 미리 보여드릴게요.',
+          'imagePath': file.path,
+        });
+        isThinking = false;
+      });
+      _scrollToBottom();
+      await _speak('요청하신 스타일을 미리 보여드릴게요.');
+    } catch (e) {
+      debugPrint('스타일 미리보기 오류: $e');
+
+      if (!mounted) return;
+
+      setState(() {
+        isThinking = false;
+      });
+
+      final message = '사진을 준비하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.';
+      _showError(message);
+    }
+  }
+
   Future<void> _sendTextQuestion() async {
     final text = _textController.text.trim();
 
@@ -265,6 +466,11 @@ class _NaonHomePageState extends State<NaonHomePage> {
     });
 
     _scrollToBottom();
+
+    if (_isStylePreviewRequest(question)) {
+      await _generateStylePreview(question);
+      return;
+    }
 
     XFile? image;
 
@@ -501,6 +707,9 @@ $lengthInstruction
         setState(() {
           _avatarSpeaking = true;
         });
+        if (!_avatarGlowController.isAnimating) {
+          _avatarGlowController.repeat(reverse: true);
+        }
       }
 
       await _tts.speak(text);
@@ -509,6 +718,8 @@ $lengthInstruction
         setState(() {
           _avatarSpeaking = false;
         });
+        _avatarGlowController.stop();
+        _avatarGlowController.value = 0.0;
       }
       debugPrint('음성 출력 오류: $e');
     }
@@ -621,6 +832,7 @@ $lengthInstruction
     _speech.stop();
     _textController.dispose();
     _scrollController.dispose();
+    _avatarGlowController.dispose();
     super.dispose();
   }
 
@@ -669,41 +881,44 @@ $lengthInstruction
       Positioned(
         top: 12,
         right: 12,
-        child: AnimatedScale(
-          scale: _avatarSpeaking ? 1.08 : 1.0,
-          duration: const Duration(milliseconds: 220),
-          child: AnimatedRotation(
-            turns: _avatarSpeaking ? 0.015 : 0.0,
-            duration: const Duration(milliseconds: 220),
-            child: Container(
+        child: AnimatedBuilder(
+          animation: _avatarGlowController,
+          builder: (context, child) {
+            final t = _avatarSpeaking
+                ? _avatarGlowController.value
+                : 0.0;
+            final glow = 4.0 + (10.0 * t);
+            final opacity = 0.10 + (0.18 * t);
+
+            return Container(
               width: 64,
               height: 64,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.95),
+                color: Colors.white.withOpacity(0.96),
                 border: Border.all(
-                  color: _avatarSpeaking
-                      ? Colors.pinkAccent
-                      : Colors.pink.shade200,
-                  width: _avatarSpeaking ? 3 : 2,
+                  color: Color.lerp(
+                    Colors.pink.shade200,
+                    Colors.pinkAccent,
+                    t,
+                  )!,
+                  width: 2,
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
+                    color: Colors.pinkAccent.withOpacity(opacity),
+                    blurRadius: glow,
+                    spreadRadius: 1.0 + (2.0 * t),
                   ),
                 ],
               ),
-              child: Icon(
-                _avatarSpeaking
-                    ? Icons.record_voice_over_rounded
-                    : Icons.face_rounded,
+              child: const Icon(
+                Icons.face_rounded,
                 size: 34,
                 color: Colors.pinkAccent,
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
 
@@ -758,12 +973,30 @@ $lengthInstruction
                           : Colors.white,
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: Text(
-                      message['text'] ?? '',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.35,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if ((message['text'] ?? '').isNotEmpty)
+                          Text(
+                            message['text'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              height: 1.35,
+                            ),
+                          ),
+                        if ((message['imagePath'] ?? '').isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.file(
+                                File(message['imagePath']!),
+                                width: 260,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 );
@@ -867,7 +1100,16 @@ $lengthInstruction
               ),
             ),
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 2),
+          IconButton(
+            tooltip: '스타일 사진 등록',
+            onPressed: _pickStyleSourceImage,
+            icon: const Icon(
+              Icons.photo_camera_back_outlined,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 2),
           IconButton(
             tooltip: '음성인식',
             onPressed: _toggleListening,
