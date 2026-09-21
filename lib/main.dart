@@ -93,42 +93,36 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
   }
 
   Future<void> _initializeCamera() async {
-      if (cameras.isEmpty) {
-        return;
-      }
-  
-      CameraDescription selectedCamera = cameras.first;
-  
-      for (final camera in cameras) {
-        if (camera.lensDirection == CameraLensDirection.front) {
-          selectedCamera = camera;
-          break;
-        }
-      }
-  
-      try {
-        final controller = CameraController(
-          selectedCamera,
-          ResolutionPreset.medium,
-          enableAudio: false,
-        );
-  
-        await controller.initialize();
-  
-        if (!mounted) {
-          await controller.dispose();
-          return;
-        }
-  
-        setState(() {
-          _cameraController = controller;
-          cameraReady = true;
-        });
-      } catch (e) {
-        debugPrint('카메라 실행 오류: $e');
+    if (cameras.isEmpty) return;
+
+    CameraDescription selectedCamera = cameras.first;
+    for (final camera in cameras) {
+      if (camera.lensDirection == CameraLensDirection.front) {
+        selectedCamera = camera;
+        break;
       }
     }
-  
+
+    try {
+      final controller = CameraController(
+        selectedCamera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() {
+        _cameraController = controller;
+        cameraReady = true;
+      });
+    } catch (e) {
+      debugPrint('카메라 실행 오류: $e');
+    }
+  }
+
   Future<void> _initSpeech() async {
       try {
         speechReady = await _speech.initialize(
@@ -291,44 +285,46 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
 
   bool _isStylePreviewRequest(String text) {
     final lower = text.toLowerCase();
-    return (lower.contains('보여줘') ||
-            lower.contains('보여 줘') ||
-            lower.contains('미리') ||
-            lower.contains('예상')) &&
-        (lower.contains('코디') ||
-            lower.contains('화장') ||
-            lower.contains('메이크업') ||
-            lower.contains('립') ||
-            lower.contains('옷') ||
-            lower.contains('스타일') ||
-            lower.contains('색') ||
-            lower.contains('정장') ||
-            lower.contains('캐주얼'));
+    final show = lower.contains('보여줘') ||
+        lower.contains('보여 줘') ||
+        lower.contains('그려줘') ||
+        lower.contains('그려 줘') ||
+        lower.contains('미리') ||
+        lower.contains('예상') ||
+        lower.contains('모습');
+
+    final imageTopic = lower.contains('코디') ||
+        lower.contains('화장') ||
+        lower.contains('메이크업') ||
+        lower.contains('립') ||
+        lower.contains('옷') ||
+        lower.contains('스타일') ||
+        lower.contains('색') ||
+        lower.contains('정장') ||
+        lower.contains('캐주얼') ||
+        lower.contains('들판') ||
+        lower.contains('바닷가') ||
+        lower.contains('바다') ||
+        lower.contains('카페') ||
+        lower.contains('여행') ||
+        lower.contains('배경') ||
+        lower.contains('사진') ||
+        lower.contains('일러스트');
+
+    return show && imageTopic;
   }
 
   Future<void> _generateStylePreview(String request) async {
     if (_styleSourceImage == null) {
-      final message = '먼저 아래 사진 버튼으로 사진을 등록해주세요.';
-      if (mounted) {
-        setState(() {
-          messages.add({'type': 'naon', 'text': message});
-        });
-        _scrollToBottom();
-      }
-      await _speak(message);
+      const message = '먼저 사진 버튼으로 사진을 등록해주세요.';
+      _addNaonMessage(message, speak: true);
       return;
     }
 
     const apiKey = String.fromEnvironment('OPENAI_API_KEY');
     if (apiKey.isEmpty) {
-      final message = 'AI 연결 설정에 문제가 있어요. 나중에 다시 시도해주세요.';
-      if (mounted) {
-        setState(() {
-          messages.add({'type': 'naon', 'text': message});
-          isThinking = false;
-        });
-      }
-      await _speak(message);
+      const message = '요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.';
+      _addNaonMessage(message, speak: true);
       return;
     }
 
@@ -337,12 +333,13 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       final imageData = base64Encode(bytes);
 
       final prompt = """
-등록한 사진 속 인물을 참고해서 스타일 미리보기 이미지를 만들어주세요.
-원본 인물의 얼굴과 정체성을 자연스럽게 유지하고, 다른 사람으로 바꾸지 마세요.
-사진을 참고한 자연스러운 실제 스타일 미리보기로 만들어주세요.
+등록한 사진 속 인물을 참고해서 사용자가 자신임을 알아볼 수 있는 개인 일러스트를 만들어주세요.
+실사 사진을 그대로 복사하지 말고 자연스럽고 깔끔한 일러스트로 표현하세요.
+얼굴의 주요 특징, 헤어스타일과 전체적인 인상은 가능한 한 유지하세요.
+사용자의 요청을 일러스트에 자연스럽게 반영하세요.
 사용자의 요청: $request
-얼굴을 과도하게 바꾸거나 피부를 비현실적으로 수정하지 마세요.
-사진 한 장 안에 한 사람만 나오게 하고, 글자나 워터마크는 넣지 마세요.
+옷, 화장, 립 컬러, 헤어스타일, 배경 등의 요청이 있다면 반영하세요.
+한 사람만 나오게 하고 글자와 워터마크는 넣지 마세요.
 """;
 
       final body = {
@@ -382,8 +379,8 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint('스타일 미리보기 HTTP ${response.statusCode}: ${response.body}');
-        throw Exception('스타일 미리보기 HTTP ${response.statusCode}');
+        debugPrint('이미지 생성 HTTP ${response.statusCode}: ${response.body}');
+        throw Exception('이미지 생성 HTTP ${response.statusCode}');
       }
 
       final data = jsonDecode(response.body);
@@ -403,12 +400,11 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       }
 
       if (generatedBase64 == null || generatedBase64.isEmpty) {
-        throw Exception('생성된 미리보기 이미지가 없습니다.');
+        throw Exception('생성된 이미지가 없습니다.');
       }
 
-      final dir = Directory.systemTemp;
       final file = File(
-        '${dir.path}/naon_style_preview_${DateTime.now().millisecondsSinceEpoch}.png',
+        '${Directory.systemTemp.path}/naon_illustration_${DateTime.now().millisecondsSinceEpoch}.png',
       );
       await file.writeAsBytes(base64Decode(generatedBase64));
 
@@ -417,23 +413,20 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       setState(() {
         messages.add({
           'type': 'naon',
-          'text': '요청하신 스타일을 미리 보여드릴게요.',
+          'text': '요청하신 모습을 일러스트로 보여드릴게요.',
           'imagePath': file.path,
         });
         isThinking = false;
       });
       _scrollToBottom();
-      await _speak('요청하신 스타일을 미리 보여드릴게요.');
+      await _speak('요청하신 모습을 일러스트로 보여드릴게요.');
     } catch (e) {
-      debugPrint('스타일 미리보기 오류: $e');
-
+      debugPrint('이미지 생성 오류: $e');
       if (!mounted) return;
-
       setState(() {
         isThinking = false;
       });
-
-      final message = '사진을 준비하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.';
+      const message = '요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.';
       _showError(message);
     }
   }
@@ -878,46 +871,43 @@ $lengthInstruction
       CameraPreview(_cameraController!),
 
       Positioned(
-        top: 12,
-        right: 12,
-        child: AnimatedBuilder(
-          animation: _avatarGlowController,
-          builder: (context, child) {
-            final t = _avatarSpeaking
-                ? _avatarGlowController.value
-                : 0.0;
-            final glow = 4.0 + (10.0 * t);
-            final opacity = 0.10 + (0.18 * t);
+        top: 10,
+        right: 10,
+        child: IgnorePointer(
+          child: AnimatedBuilder(
+            animation: _avatarGlowController,
+            builder: (context, child) {
+              final t = _avatarSpeaking
+                  ? _avatarGlowController.value
+                  : 0.0;
 
-            return Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.96),
-                border: Border.all(
-                  color: Color.lerp(
-                    Colors.pink.shade200,
-                    Colors.pinkAccent,
-                    t,
-                  )!,
-                  width: 2,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.pinkAccent.withOpacity(opacity),
-                    blurRadius: glow,
-                    spreadRadius: 1.0 + (2.0 * t),
+              final opacity = 0.04 + (0.10 * t);
+              final blur = 18.0 + (18.0 * t);
+              final size = 52.0 + (12.0 * t);
+
+              return SizedBox(
+                width: 72,
+                height: 72,
+                child: Center(
+                  child: Container(
+                    width: size,
+                    height: size,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.pinkAccent.withOpacity(opacity),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.pinkAccent.withOpacity(opacity),
+                          blurRadius: blur,
+                          spreadRadius: 5.0 + (4.0 * t),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ),
-              child: const Icon(
-                Icons.face_rounded,
-                size: 34,
-                color: Colors.pinkAccent,
-              ),
-            );
-          },
+                ),
+              );
+            },
+          ),
         ),
       ),
 
