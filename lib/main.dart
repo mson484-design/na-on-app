@@ -321,10 +321,10 @@ class _NaonHomePageState extends State<NaonHomePage> {
             'model': 'gpt-image-2',
             'size': '1024x1024',
             'quality': 'low',
-            'background': 'transparent',
+            'background': 'opaque',
           },
         ],
-        'tool_choice': 'required',
+        'tool_choice': {'type': 'image_generation'},
       };
 
       final response = await http.post(
