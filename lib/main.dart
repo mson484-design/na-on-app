@@ -1,12 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 List<CameraDescription> cameras = [];
@@ -61,13 +57,7 @@ class _NaonHomePageState extends State<NaonHomePage> {
   bool isListening = false;
   bool isThinking = false;
 
-  final ImagePicker _imagePicker = ImagePicker();
-  File? _avatarImage;
-  String _avatarMood = '자연스럽게';
-  String _avatarStyle = '편안한 일상복';
-  String _avatarExpression = '편안한 표정';
-  int _avatarSetupStep = 0;
-  bool _avatarSetupMode = false;
+  bool _avatarSpeaking = false;
 
   String answerLength = '보통';
 
@@ -90,460 +80,6 @@ class _NaonHomePageState extends State<NaonHomePage> {
     });
   }
 
-  Future<void> _loadSavedAvatar() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final path = prefs.getString('naon_avatar_path');
-      final mood = prefs.getString('naon_avatar_mood');
-      final style = prefs.getString('naon_avatar_style');
-      final expression = prefs.getString('naon_avatar_expression');
-
-      if (!mounted) return;
-
-      setState(() {
-        if (path != null && File(path).existsSync()) {
-          _avatarImage = File(path);
-        }
-        if (mood != null && mood.isNotEmpty) _avatarMood = mood;
-        if (style != null && style.isNotEmpty) _avatarStyle = style;
-        if (expression != null && expression.isNotEmpty) {
-          _avatarExpression = expression;
-        }
-      });
-    } catch (e) {
-      debugPrint('아바타 불러오기 오류: $e');
-    }
-  }
-
-  Future<void> _pickAvatarPhoto() async {
-  try {
-    // 1. 기존 아바타 정보 삭제
-    final prefs = await SharedPreferences.getInstance();
-
-    await prefs.remove('naon_avatar_path');
-    await prefs.remove('naon_avatar_mood');
-    await prefs.remove('naon_avatar_style');
-    await prefs.remove('naon_avatar_expression');
-
-    if (!mounted) return;
-
-    setState(() {
-      _avatarImage = null;
-      _avatarMood = '자연스럽게';
-      _avatarStyle = '편안한 일상복';
-      _avatarExpression = '편안한 표정';
-      _avatarSetupStep = 0;
-    });
-
-    // 2. 새 사진 선택
-    final picked = await _imagePicker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 88,
-      maxWidth: 1200,
-    );
-
-    if (picked == null) return;
-
-    // 3. 새 사진 등록
-    final file = File(picked.path);
-
-    await prefs.setString(
-      'naon_avatar_path',
-      file.path,
-    );
-
-    if (!mounted) return;
-
-    setState(() {
-      _avatarImage = file;
-    });
-
-    _addNaonMessage(
-      '기존 아바타를 삭제하고 새 사진으로 등록했어요.',
-    );
-  } catch (e) {
-    debugPrint('아바타 사진 교체 오류: $e');
-    _showError('아바타 사진을 교체하지 못했습니다.');
-  }
-}
-
-  bool _isAvatarCommand(String text) {
-    final t = text.replaceAll(' ', '');
-    return t.contains('아바타') &&
-        (t.contains('만들') ||
-            t.contains('생성') ||
-            t.contains('바꿔') ||
-            t.contains('교체') ||
-            t.contains('설정'));
-  }
-
-  Future<void> _startAvatarSetup() async {
-    _avatarSetupMode = true;
-    _avatarSetupStep = 0;
-
-    if (_avatarImage == null) {
-      _addNaonMessage(
-        '먼저 아바타로 사용할 사진을 올려주세요. 아래 📷 버튼을 누르면 휴대폰 사진에서 선택할 수 있어요.',
-      );
-      return;
-    }
-
-    _askNextAvatarQuestion();
-  }
-
-  void _askNextAvatarQuestion() {
-    if (!_avatarSetupMode) return;
-
-    if (_avatarSetupStep == 0) {
-      _addNaonMessage(
-        '첫 번째 질문이에요. 어떤 분위기의 아바타를 원하세요?\n① 밝고 귀엽게\n② 차분하고 세련되게\n③ 자연스럽게',
-      );
-    } else if (_avatarSetupStep == 1) {
-      _addNaonMessage(
-        '두 번째 질문이에요. 어떤 스타일로 보여드릴까요?\n① 편안한 일상복\n② 깔끔한 정장\n③ 원하는 스타일을 직접 말하기',
-      );
-    } else if (_avatarSetupStep == 2) {
-      _addNaonMessage(
-        '세 번째 질문이에요. 어떤 표정이 좋으세요?\n① 밝게 웃는 표정\n② 편안한 표정\n③ 진지하고 또렷한 표정',
-      );
-    }
-  }
-
-  Future<bool> _handleAvatarSetupAnswer(String answer) async {
-    if (!_avatarSetupMode) return false;
-
-    final t = answer.replaceAll(' ', '');
-
-    if (_avatarSetupStep == 0) {
-      if (t.contains('밝') || t.contains('귀엽') || t.contains('1')) {
-        _avatarMood = '밝고 귀엽게';
-      } else if (t.contains('차분') || t.contains('세련') || t.contains('2')) {
-        _avatarMood = '차분하고 세련되게';
-      } else {
-        _avatarMood = '자연스럽게';
-      }
-      _avatarSetupStep = 1;
-      _askNextAvatarQuestion();
-      return true;
-    }
-
-    if (_avatarSetupStep == 1) {
-      if (t.contains('정장') || t.contains('2')) {
-        _avatarStyle = '깔끔한 정장';
-      } else if (t.contains('직접') || t.contains('3')) {
-        _avatarStyle = answer.trim();
-      } else {
-        _avatarStyle = '편안한 일상복';
-      }
-      _avatarSetupStep = 2;
-      _askNextAvatarQuestion();
-      return true;
-    }
-
-    if (_avatarSetupStep == 2) {
-      if (t.contains('웃') || t.contains('밝') || t.contains('1')) {
-        _avatarExpression = '밝게 웃는 표정';
-      } else if (t.contains('진지') || t.contains('또렷') || t.contains('3')) {
-        _avatarExpression = '진지하고 또렷한 표정';
-      } else {
-        _avatarExpression = '편안한 표정';
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('naon_avatar_mood', _avatarMood);
-      await prefs.setString('naon_avatar_style', _avatarStyle);
-      await prefs.setString('naon_avatar_expression', _avatarExpression);
-
-      _avatarSetupMode = false;
-      _avatarSetupStep = 0;
-
-      if (mounted) setState(() {});
-
-      _addNaonMessage(
-        '3가지 설정이 끝났어요. 이제 등록한 사진을 바탕으로 나온 캐릭터를 만들게요.',
-        speak: false,
-      );
-
-      await _generateAvatarCharacter();
-      return true;
-    }
-
-    return false;
-  }
-
-  Future<void> _generateAvatarCharacter() async {
-    if (_avatarImage == null) {
-      _showError('먼저 아바타 사진을 등록해주세요.');
-      return;
-    }
-
-    const apiKey = String.fromEnvironment('OPENAI_API_KEY');
-    if (apiKey.isEmpty) {
-      _showError('OPENAI_API_KEY가 없습니다.');
-      return;
-    }
-
-    try {
-      final sourceFile = _avatarImage!;
-      final bytes = await sourceFile.readAsBytes();
-      final imageData = base64Encode(bytes);
-
-      final prompt = """
-등록한 사진 속 사람을 참고해서 '나온'이라는 개인 AI 아바타 캐릭터를 만들어주세요.
-사진 속 인물의 얼굴 특징과 전체적인 인상을 최대한 자연스럽게 유지하되,
-실사 사진 그대로가 아니라 친근하고 깔끔한 캐릭터형 아바타로 변환해주세요.
-상반신 중심의 정면 또는 약간의 3/4 방향, 얼굴이 잘 보이게 만들어주세요.
-작은 화면의 원형 아바타에서 잘 보이도록 단순하고 선명하게 표현해주세요.
-분위기: $_avatarMood
-스타일: $_avatarStyle
-표정: $_avatarExpression
-배경은 투명하게 만들고 캐릭터만 나오게 해주세요.
-텍스트나 글자는 넣지 마세요.
-""";
-
-      final body = {
-        'model': 'gpt-5.6-sol',
-        'input': [
-          {
-            'role': 'user',
-            'content': [
-              {'type': 'input_text', 'text': prompt},
-              {
-                'type': 'input_image',
-                'image_url': 'data:image/jpeg;base64,$imageData',
-              },
-            ],
-          },
-        ],
-        'tools': [
-          {
-            'type': 'image_generation',
-            'model': 'gpt-image-2',
-            'size': '1024x1024',
-            'quality': 'low',
-            'background': 'opaque',
-            'action': 'edit',
-          },
-        ],
-        'tool_choice': {'type': 'image_generation'},
-      };
-
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/responses'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $apiKey',
-        },
-        body: jsonEncode(body),
-      );
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint('아바타 생성 오류: ${response.body}');
-        throw Exception('이미지 생성 HTTP ${response.statusCode}');
-      }
-
-      final data = jsonDecode(response.body);
-      String? generatedBase64;
-      final output = data['output'];
-
-      if (output is List) {
-        for (final item in output) {
-          if (item is Map && item['type'] == 'image_generation_call') {
-            final result = item['result'];
-            if (result is String && result.isNotEmpty) {
-              generatedBase64 = result;
-              break;
-            }
-          }
-        }
-      }
-
-      if (generatedBase64 == null || generatedBase64.isEmpty) {
-        throw Exception('생성된 아바타 이미지가 없습니다.');
-      }
-
-      final generatedFile = File(
-        '${sourceFile.parent.path}/naon_avatar_generated.png',
-      );
-      await generatedFile.writeAsBytes(base64Decode(generatedBase64));
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('naon_avatar_path', generatedFile.path);
-
-      if (!mounted) return;
-
-      setState(() {
-        _avatarImage = generatedFile;
-      });
-
-      _addNaonMessage(
-        '나온 캐릭터 아바타가 완성됐어요. 이제 오른쪽 위에서 나온이 함께할게요.',
-      );
-    } catch (e) {
-      debugPrint('나온 캐릭터 생성 오류: $e');
-      _showError('캐릭터 생성에 실패했습니다. 사진과 인터넷 연결을 확인해주세요.');
-    }
-  }
-
-  Future<void> _initializeCamera() async {
-    if (cameras.isEmpty) {
-      return;
-    }
-
-    CameraDescription selectedCamera = cameras.first;
-
-    for (final camera in cameras) {
-      if (camera.lensDirection == CameraLensDirection.front) {
-        selectedCamera = camera;
-        break;
-      }
-    }
-
-    try {
-      final controller = CameraController(
-        selectedCamera,
-        ResolutionPreset.medium,
-        enableAudio: false,
-      );
-
-      await controller.initialize();
-
-      if (!mounted) {
-        await controller.dispose();
-        return;
-      }
-
-      setState(() {
-        _cameraController = controller;
-        cameraReady = true;
-      });
-    } catch (e) {
-      debugPrint('카메라 실행 오류: $e');
-    }
-  }
-
-  Future<void> _initSpeech() async {
-    try {
-      speechReady = await _speech.initialize(
-        onStatus: (status) {
-          debugPrint('음성인식 상태: $status');
-
-          if (status == 'notListening' && mounted) {
-            setState(() {
-              isListening = false;
-            });
-          }
-        },
-        onError: (error) {
-          debugPrint('음성인식 오류: ${error.errorMsg}');
-
-          if (mounted) {
-            setState(() {
-              isListening = false;
-            });
-
-            _showError('음성인식 오류\n${error.errorMsg}');
-          }
-        },
-      );
-
-      if (mounted) {
-        setState(() {});
-      }
-    } catch (e) {
-      debugPrint('음성인식 초기화 오류: $e');
-
-      if (mounted) {
-        setState(() {
-          speechReady = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _initTts() async {
-    try {
-      await _tts.setLanguage('ko-KR');
-      await _tts.setSpeechRate(0.38);
-      await _tts.setPitch(0.95);
-      await _tts.setVolume(1.0);
-    } catch (e) {
-      debugPrint('TTS 초기화 오류: $e');
-    }
-  }
-
-  Future<void> _toggleListening() async {
-    if (!speechReady) {
-      _showError(
-        '음성인식을 사용할 수 없습니다.\n휴대폰의 마이크 권한을 확인해주세요.',
-      );
-      return;
-    }
-
-    if (isListening) {
-      await _speech.stop();
-
-      if (mounted) {
-        setState(() {
-          isListening = false;
-        });
-      }
-
-      return;
-    }
-
-    try {
-      await _tts.stop();
-
-      if (mounted) {
-        setState(() {
-          isListening = true;
-        });
-      }
-
-      await _speech.listen(
-        localeId: 'ko-KR',
-        partialResults: true,
-        onResult: (result) {
-          if (!mounted) {
-            return;
-          }
-
-          setState(() {
-            _textController.text = result.recognizedWords;
-            _textController.selection = TextSelection.fromPosition(
-              TextPosition(
-                offset: _textController.text.length,
-              ),
-            );
-          });
-
-          if (result.finalResult) {
-            final text = result.recognizedWords.trim();
-
-            setState(() {
-              isListening = false;
-            });
-
-            if (text.isNotEmpty) {
-              _sendQuestion(text);
-            }
-          }
-        },
-      );
-    } catch (e) {
-      debugPrint('음성인식 실행 오류: $e');
-
-      if (mounted) {
-        setState(() {
-          isListening = false;
-        });
-
-        _showError('음성인식을 시작하지 못했습니다.');
-      }
-    }
-  }
-
   Future<void> _sendTextQuestion() async {
     final text = _textController.text.trim();
 
@@ -557,32 +93,6 @@ class _NaonHomePageState extends State<NaonHomePage> {
 
   Future<void> _sendQuestion(String question) async {
     if (isThinking) {
-      return;
-    }
-
-    if (_avatarSetupMode) {
-      setState(() {
-        messages.add({
-          'type': 'user',
-          'text': question,
-        });
-        _textController.clear();
-      });
-      _scrollToBottom();
-      await _handleAvatarSetupAnswer(question);
-      return;
-    }
-
-    if (_isAvatarCommand(question)) {
-      setState(() {
-        messages.add({
-          'type': 'user',
-          'text': question,
-        });
-        _textController.clear();
-      });
-      _scrollToBottom();
-      await _startAvatarSetup();
       return;
     }
 
@@ -817,29 +327,31 @@ $lengthInstruction
       double rate = 0.38;
       double pitch = 0.95;
 
-      if (_avatarMood == '밝고 귀엽게') {
-        rate = 0.45;
-        pitch = 1.08;
-      } else if (_avatarMood == '차분하고 세련되게') {
-        rate = 0.32;
-        pitch = 0.90;
-      } else if (_isCheerful(text, lower)) {
+      if (_isCheerful(text, lower)) {
         rate = 0.45;
         pitch = 1.08;
       } else if (_isCalm(text, lower)) {
         rate = 0.32;
         pitch = 0.90;
-      } else {
-        rate = 0.38;
-        pitch = 0.97;
       }
 
       await _tts.setSpeechRate(rate);
       await _tts.setPitch(pitch);
       await _tts.setVolume(1.0);
 
+      if (mounted) {
+        setState(() {
+          _avatarSpeaking = true;
+        });
+      }
+
       await _tts.speak(text);
     } catch (e) {
+      if (mounted) {
+        setState(() {
+          _avatarSpeaking = false;
+        });
+      }
       debugPrint('음성 출력 오류: $e');
     }
   }
@@ -999,38 +511,44 @@ $lengthInstruction
       Positioned(
         top: 12,
         right: 12,
-        child: Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white.withOpacity(0.95),
-            border: Border.all(
-              color: Colors.pinkAccent,
-              width: 2,
-            ),
-          ),
-          child: ClipOval(
-            child: _avatarImage != null
-                ? Image.file(
-                    _avatarImage!,
-                    width: 64,
-                    height: 64,
-                    fit: BoxFit.cover,
-                  )
-                : const Center(
-                    child: Text(
-                      '나온',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.pink,
-                      ),
-                    ),
+        child: AnimatedScale(
+          scale: _avatarSpeaking ? 1.08 : 1.0,
+          duration: const Duration(milliseconds: 220),
+          child: AnimatedRotation(
+            turns: _avatarSpeaking ? 0.015 : 0.0,
+            duration: const Duration(milliseconds: 220),
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.95),
+                border: Border.all(
+                  color: _avatarSpeaking
+                      ? Colors.pinkAccent
+                      : Colors.pink.shade200,
+                  width: _avatarSpeaking ? 3 : 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
                   ),
+                ],
+              ),
+              child: Icon(
+                _avatarSpeaking
+                    ? Icons.record_voice_over_rounded
+                    : Icons.face_rounded,
+                size: 34,
+                color: Colors.pinkAccent,
+              ),
+            ),
           ),
         ),
       ),
+
     ],
   );
 }
