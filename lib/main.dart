@@ -136,45 +136,58 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       }
     }
   
-  Future<void> _initSpeech() async {
-      try {
-        speechReady = await _speech.initialize(
-          onStatus: (status) {
-            debugPrint('음성인식 상태: $status');
-  
-            if (status == 'notListening' && mounted) {
-              setState(() {
-                isListening = false;
-              });
-            }
-          },
-          onError: (error) {
-            debugPrint('음성인식 오류: ${error.errorMsg}');
-  
-            if (mounted) {
-              setState(() {
-                isListening = false;
-              });
-  
-              _showError('음성인식 오류\n${error.errorMsg}');
-            }
-          },
-        );
-  
+  Future<void> _initSpeech({bool retry = true}) async {
+    try {
+      speechReady = await _speech.initialize(
+        onStatus: (status) {
+          debugPrint('음성인식 상태: $status');
+
+          if (status == 'notListening' && mounted) {
+            setState(() {
+              isListening = false;
+            });
+          }
+        },
+        onError: (error) {
+          debugPrint('음성인식 오류: ${error.errorMsg}');
+
+          if (mounted) {
+            setState(() {
+              isListening = false;
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() {});
+      }
+
+      if (!speechReady && retry) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
         if (mounted) {
-          setState(() {});
+          await _initSpeech(retry: false);
         }
-      } catch (e) {
-        debugPrint('음성인식 초기화 오류: $e');
-  
+      }
+    } catch (e) {
+      debugPrint('음성인식 초기화 오류: $e');
+
+      if (mounted) {
+        setState(() {
+          speechReady = false;
+          isListening = false;
+        });
+      }
+
+      if (retry) {
+        await Future<void>.delayed(const Duration(milliseconds: 700));
         if (mounted) {
-          setState(() {
-            speechReady = false;
-          });
+          await _initSpeech(retry: false);
         }
       }
     }
-  
+  }
+
   Future<void> _initTts() async {
       try {
         await _tts.setLanguage('ko-KR');
