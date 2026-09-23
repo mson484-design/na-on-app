@@ -12,6 +12,8 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 List<CameraDescription> cameras = [];
 
+const String naonBridgeUrl = 'https://shy-boat-f7da.mson9929.workers.dev';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -323,16 +325,6 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
     final source = _styleSourceImage;
     if (source == null) return;
 
-    const apiKey = String.fromEnvironment('OPENAI_API_KEY');
-    if (apiKey.isEmpty) {
-      if (e is TimeoutException) {
-        _showError('일러스트를 만드는 데 시간이 오래 걸리고 있어요. 잠시 후 다시 시도해주세요.');
-      } else {
-        _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
-      }
-      return;
-    }
-
     if (mounted) {
       setState(() {
         isThinking = true;
@@ -340,59 +332,43 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
     }
 
     try {
-      final prompt = '''
-등록한 사진 속 사람을 참고해서 그 사람임을 알아볼 수 있는 따뜻하고 정감 있는 사용자 일러스트 초상화를 만들어주세요.
-사진을 그대로 복사한 실사 사진이 아니라, 손자가 그려준 듯한 친근하고 부드러운 캐릭터 초상화 느낌으로 단순화해주세요.
-얼굴형, 헤어스타일, 안경 등 알아볼 수 있는 특징은 유지하고 세세한 피부 표현과 사진 배경은 단순화하세요.
-상반신 중심, 정면에 가까운 구도, 부드러운 파스텔 색감, 깨끗한 선, 따뜻한 표정으로 만들어주세요.
-글자, 말풍선, 로고, 복잡한 소품과 복잡한 배경은 넣지 마세요.
-''';
+      final sourceBytes = await source.readAsBytes();
+      final imageBase64 = base64Encode(sourceBytes);
 
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('https://api.openai.com/v1/images/edits'),
-      );
-      request.headers['Authorization'] = 'Bearer $apiKey';
-      request.files.add(
-        await http.MultipartFile.fromPath('image[]', source.path),
-      );
-      request.fields['model'] = 'gpt-image-2.5-sunburst';
-      request.fields['prompt'] = prompt;
-      request.fields['size'] = '512x512';
-      request.fields['quality'] = 'low';
-      request.fields['output_format'] = 'png';
+      final response = await http
+          .post(
+            Uri.parse('$naonBridgeUrl/avatar'),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'imageBase64': imageBase64,
+            }),
+          )
+          .timeout(const Duration(seconds: 180));
 
-      final streamed = await request.send().timeout(
-        const Duration(seconds: 120),
-        onTimeout: () => throw TimeoutException('이미지 생성 시간이 초과되었습니다.'),
-      );
-      final response = await http.Response.fromStream(streamed);
+      debugPrint('나온 중간다리 이미지 상태코드: ${response.statusCode}');
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint('사용자 일러스트 HTTP ${response.statusCode}: ${response.body}');
-        throw Exception('사용자 일러스트 HTTP ${response.statusCode}');
+        debugPrint('나온 중간다리 이미지 오류: ${response.body}');
+        throw Exception('중간다리 HTTP ${response.statusCode}');
       }
 
       final data = jsonDecode(response.body);
-      String? generatedBase64;
-      final resultList = data['data'];
-      if (resultList is List && resultList.isNotEmpty) {
-        final first = resultList.first;
-        if (first is Map) {
-          final value = first['b64_json'];
-          if (value is String && value.isNotEmpty) {
-            generatedBase64 = value;
-          }
-        }
-      }
+      final generatedBase64 = data['imageBase64'];
 
-      if (generatedBase64 == null || generatedBase64.isEmpty) {
+      if (generatedBase64 is! String || generatedBase64.isEmpty) {
         throw Exception('생성된 사용자 일러스트가 없습니다.');
       }
 
-      final generatedBytes = Uint8List.fromList(base64Decode(generatedBase64));
+      final generatedBytes =
+          Uint8List.fromList(base64Decode(generatedBase64));
+
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('naon_avatar_illustration_base64', generatedBase64);
+      await prefs.setString(
+        'naon_avatar_illustration_base64',
+        generatedBase64,
+      );
 
       final file = File(
         '${Directory.systemTemp.path}/naon_avatar_illustration_${DateTime.now().millisecondsSinceEpoch}.png',
@@ -400,6 +376,7 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
       await file.writeAsBytes(generatedBytes);
 
       if (!mounted) return;
+
       setState(() {
         _avatarIllustrationBytes = generatedBytes;
         isThinking = false;
@@ -409,18 +386,28 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
           'imagePath': file.path,
         });
       });
+
       _scrollToBottom();
-      await _speak('나를 닮은 일러스트를 만들었어요. 이제 코디나 화장을 바꿔서 볼 수 있어요.');
+      await _speak(
+        '나를 닮은 일러스트를 만들었어요. 이제 코디나 화장을 바꿔서 볼 수 있어요.',
+      );
     } catch (e) {
       debugPrint('사용자 일러스트 생성 오류: $e');
+
       if (!mounted) return;
+
       setState(() {
         isThinking = false;
       });
+
       if (e is TimeoutException) {
-        _showError('일러스트를 만드는 데 시간이 오래 걸리고 있어요. 잠시 후 다시 시도해주세요.');
+        _showError(
+          '일러스트를 만드는 데 시간이 오래 걸리고 있어요. 잠시 후 다시 시도해주세요.',
+        );
       } else {
-        _showError('요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.');
+        _showError(
+          '요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.',
+        );
       }
     }
   }
