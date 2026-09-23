@@ -361,10 +361,25 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
           .timeout(const Duration(seconds: 180));
 
       debugPrint('나온 중간다리 이미지 상태코드: ${response.statusCode}');
+      debugPrint('나온 중간다리 이미지 응답: ${response.body}');
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        debugPrint('나온 중간다리 이미지 오류: ${response.body}');
-        throw Exception('중간다리 HTTP ${response.statusCode}');
+        String detail = response.body;
+        try {
+          final errorJson = jsonDecode(response.body);
+          if (errorJson is Map) {
+            final error = errorJson['error'];
+            final detailValue = errorJson['detail'];
+            detail = [
+              if (error != null) error.toString(),
+              if (detailValue != null) detailValue.toString(),
+            ].join('\n');
+          }
+        } catch (_) {}
+
+        throw Exception(
+          '중간다리 HTTP ${response.statusCode}\n$detail',
+        );
       }
 
       final data = jsonDecode(response.body);
@@ -419,7 +434,7 @@ class _NaonHomePageState extends State<NaonHomePage> with SingleTickerProviderSt
         );
       } else {
         _showError(
-          '요청하신 이미지를 만드는 AI와 연결하는 데 문제가 생겼어요. 나중에 다시 시도해주세요.',
+          '이미지 AI 연결 오류\n\n$e',
         );
       }
     }
